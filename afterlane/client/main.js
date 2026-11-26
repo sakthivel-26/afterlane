@@ -57,10 +57,10 @@ function initialVehicleIndex() {
   return 11; // Classic Mini
 }
 
+const isAndroidApp = navigator.userAgent.includes('AfterlaneAndroid');
 let renderer;
 try {
   setLoading(12, 'Initializing graphics engine…');
-  const isAndroidApp = navigator.userAgent.includes('AfterlaneAndroid');
   renderer = new T.WebGLRenderer({ antialias: !isAndroidApp, powerPreference: 'high-performance' });
   const initialIndex = initialVehicleIndex();
   let loadedSteps = 0;
