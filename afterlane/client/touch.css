@@ -205,7 +205,7 @@ header.game-menu {
   padding:5px; border:1px solid #d7e3ec78; border-radius:10px; background:#141f28f5; box-shadow:0 7px 20px #070e16ae;
 }
 #top-menu:not([open]) nav { display:none; }
-#top-menu nav button { width:100%; min-height:39px; text-align:left; white-space:nowrap; }
+#top-menu nav button, #top-menu nav .menu-link { width:100%; min-height:39px; text-align:left; white-space:nowrap; display:flex; align-items:center; padding:9px 13px; border:1px solid #d9d9d53e; border-radius:5px; background:#15191dcc; color:#9df3be; font:inherit; font-weight:650; text-decoration:none; }
 #top-menu #chase-tools { position:static; display:block; right:auto; top:auto; bottom:auto; color:inherit; }
 #panel #room-score { position:static; max-width:none; margin-top:12px; }
 #panel:not([data-section="multiplayer"]) #room-score { display:none; }
