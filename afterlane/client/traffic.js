@@ -6,6 +6,7 @@ import { dimensions, trafficSpecs } from './vehicle-specs.js';
 import { moveTraffic, settleLaneChange, signalLaneChange, trafficContact, trafficLanes as lanes, trafficTurn } from './collision.js';
 import { applyTrafficHeadlightReflection } from './traffic-lights.js';
 import { wheelAnimator, wheelPivot } from './wheel-motion.js';
+import { isMobileDevice } from './options.js';
 
 const wheelMaterial = new T.MeshStandardMaterial({vertexColors:true,roughness:.63,metalness:.22});
 const glass = surface(0x283845, .22, .25);
@@ -638,14 +639,6 @@ export function trafficVehicle(parent,type,color,style,asset,prepareShader=null,
   const tailX = car.width * .34;
   car.haloSpec = { width: car.width, tailY, tailZ, headY, headZ, heavy };
 
-  const trimStrip = box(car.body, rearChromeTrimMaterial, 0, Math.max(.42, reflectorY + .06), tailZ, car.width * .46, .024, .018);
-  trimStrip.userData.sharedVehicleGeometry = true;
-  if (externalWheels) {
-    // Merge chrome strip into static shared trim mesh cleanly or hide redundant draw at distance.
-    trimStrip.castShadow = false;
-    trimStrip.receiveShadow = false;
-  }
-
   const tailGeom = mergeBoxes([
     [lampW, heavy ? .115 : .072, .038, -tailX, tailY, tailZ],
     [lampW, heavy ? .115 : .072, .038,  tailX, tailY, tailZ],
@@ -653,12 +646,40 @@ export function trafficVehicle(parent,type,color,style,asset,prepareShader=null,
   const lamp = mesh(car.body, tailGeom, car.body.userData.tailLight, 0, 0, 0);
   lamp.userData.sharedVehicleGeometry = true;
 
-  const reflGeom = mergeBoxes([
-    [lampW * .92, .044, .024, -tailX, reflectorY, tailZ + .002],
-    [lampW * .92, .044, .024,  tailX, reflectorY, tailZ + .002],
-  ]);
-  const reflector = mesh(car.body, reflGeom, retroReflectorMaterial, 0, 0, 0);
-  reflector.userData.sharedVehicleGeometry = true;
+  if (externalWheels) {
+    // Consolidate chrome bumper trim and red retro-reflectors into one vertex-colored mesh.
+    const reflGeom = mergeBoxes([
+      [lampW * .92, .044, .024, -tailX, reflectorY, tailZ + .002],
+      [lampW * .92, .044, .024,  tailX, reflectorY, tailZ + .002],
+    ]);
+    const trimGeom = new T.BoxGeometry(car.width * .46, .024, .018);
+    trimGeom.translate(0, Math.max(.42, reflectorY + .06), tailZ);
+    const rNon = reflGeom.toNonIndexed(), tNon = trimGeom.toNonIndexed();
+    reflGeom.dispose(); trimGeom.dispose();
+    const paintVerts = (geom, hex) => {
+      const c = new T.Color(hex), n = geom.attributes.position.count, a = new Float32Array(n * 3);
+      for (let i = 0; i < n; i++) { const o = i * 3; a[o] = c.r; a[o + 1] = c.g; a[o + 2] = c.b; }
+      geom.setAttribute('color', new T.BufferAttribute(a, 3));
+      for (const k of Object.keys(geom.attributes)) if (!['position', 'normal', 'color'].includes(k)) geom.deleteAttribute(k);
+    };
+    paintVerts(rNon, 0xe82c3a);
+    paintVerts(tNon, 0xc2ccd6);
+    const mergedRear = mergeGeometries([rNon, tNon], false);
+    rNon.dispose(); tNon.dispose();
+    if (mergedRear) {
+      const rearPart = mesh(car.body, mergedRear, sharedTrafficTrimMat, 0, 0, 0);
+      rearPart.userData.sharedVehicleGeometry = true;
+    }
+  } else {
+    const trimStrip = box(car.body, rearChromeTrimMaterial, 0, Math.max(.42, reflectorY + .06), tailZ, car.width * .46, .024, .018);
+    trimStrip.userData.sharedVehicleGeometry = true;
+    const reflGeom = mergeBoxes([
+      [lampW * .92, .044, .024, -tailX, reflectorY, tailZ + .002],
+      [lampW * .92, .044, .024,  tailX, reflectorY, tailZ + .002],
+    ]);
+    const reflector = mesh(car.body, reflGeom, retroReflectorMaterial, 0, 0, 0);
+    reflector.userData.sharedVehicleGeometry = true;
+  }
 
   if (!externalGlow) {
     for (const side of [-1, 1]) {
@@ -692,12 +713,9 @@ export function trafficVehicle(parent,type,color,style,asset,prepareShader=null,
     car.footprint = near ? model.userData.footprint : fallbackFootprint;
   }
   car.useExternalWheels = externalWheels;
-  const lodBands = {
-    Low: [0, 0],
-    Medium: [28, 36],
-    High: [42, 52],
-    Ultra: [64, 78],
-  };
+  const lodBands = isMobileDevice
+    ? { Low: [0, 0], Medium: [28, 36], High: [42, 52], Ultra: [56, 68] }
+    : { Low: [0, 0], Medium: [48, 60], High: [76, 92], Ultra: [95, 115] };
   car.updateModel = (distance, canAttach = true, quality = 'High') => {
     const [enterDist, exitDist] = lodBands[quality] || lodBands.High;
     const useDetail = enterDist > 0 && distance < (near ? exitDist : enterDist);
@@ -777,6 +795,7 @@ export function buildTraffic(scene, prepareShader=null) {
   const tailTint = new T.Color(0xff283e);
   const headTint = new T.Color(0xffe4bc);
   const tmpTint = new T.Color();
+  const posScratch = { x: 0, z: 0, heading: 0 };
 
   function spawn(car, station, lane) {
     car.station = station;
@@ -899,9 +918,9 @@ export function buildTraffic(scene, prepareShader=null) {
     const roadOrigin = roadX(distance);
     let attachedThisFrame = false;
     let shadeCount = 0, glowCount = 0, wheelCount = 0;
-    const maxForward = 290;
-    const isHigh = quality === 'High';
-    const tailAlpha = (.52 + .44 * (1 - daylight)) * (isHigh ? 1.15 : .88);
+    const maxForward = isMobileDevice ? 260 : 320;
+    const isSpriteTier = isMobileDevice && (quality === 'High' || quality === 'Ultra');
+    const tailAlpha = (.52 + .44 * (1 - daylight)) * (isSpriteTier ? 1.15 : .88);
     const headAlpha = (1.0 - daylight * .62) * .78;
 
     for (const car of active) {
@@ -909,7 +928,7 @@ export function buildTraffic(scene, prepareShader=null) {
       if (car.body.visible && (gap < -34 || gap > maxForward)) {
         car.body.visible = false;
       }
-      const position = roadPosition(car.station,car.offset);
+      const position = roadPosition(car.station,car.offset,posScratch);
       const bx = position.x-roadOrigin;
       const bz = position.z+distance;
       const byaw = position.heading+trafficTurn(car);
@@ -941,8 +960,8 @@ export function buildTraffic(scene, prepareShader=null) {
         const hs = car.haloSpec;
         if (hs && Math.abs(car.station - distance) < 220) {
           const tailX = hs.width * .34;
-          const tailScaleW = hs.width * (isHigh ? .54 : .46);
-          const tailScaleH = isHigh ? .52 : .44;
+          const tailScaleW = hs.width * (isSpriteTier ? .54 : .46);
+          const tailScaleH = isSpriteTier ? .52 : .44;
           tmpTint.copy(tailTint).multiplyScalar(tailAlpha);
           for (const side of [-1, 1]) {
             const lx = side * tailX, lz = hs.tailZ + .028;
@@ -955,7 +974,7 @@ export function buildTraffic(scene, prepareShader=null) {
               glowInstanced.setColorAt(glowCount++, tmpTint);
             }
           }
-          if (isHigh) {
+          if (isSpriteTier) {
             tmpTint.copy(headTint).multiplyScalar(headAlpha);
             for (const side of [-1, 1]) {
               const lx = side * tailX, lz = hs.headZ - .03;

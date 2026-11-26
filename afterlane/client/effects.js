@@ -10,6 +10,7 @@ import {
   UnsignedByteType, Vector2, WebGLRenderTarget
 } from 'three';
 import { debugToggles } from './debug.js';
+import { isMobileDevice } from './options.js';
 
 const BLUR_X = new Vector2(1, 0);
 const BLUR_Y = new Vector2(0, 1);
@@ -273,7 +274,7 @@ export function drivingEffects(renderer, scene, camera) {
     },
     dispose,
     render(now, speed, quality, daylight = 0) {
-      if (quality !== 'Ultra') {
+      if (isMobileDevice || (quality !== 'High' && quality !== 'Ultra')) {
         dispose();
         renderer.render(scene, camera);
         return;

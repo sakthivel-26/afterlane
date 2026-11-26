@@ -8,9 +8,12 @@ const key = 'afterlane-profile-v2';
 const idbName = 'afterlane-mobile-storage';
 const idbStore = 'profile';
 const starterVehicleIndex = 11; // Classic Mini
-export const isAndroidApp = navigator.userAgent.includes('AfterlaneAndroid');
+const ua = typeof navigator !== 'undefined' ? navigator.userAgent : '';
+const forcePhone = typeof location !== 'undefined' && new URLSearchParams(location.search).get('phone') === '1';
+export const isAndroidApp = ua.includes('AfterlaneAndroid');
 export const isMobileDevice = isAndroidApp
-  || /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent)
+  || forcePhone
+  || /Android|iPhone|iPad|iPod|Mobile/i.test(ua)
   || (typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches);
 const defaultQuality = isMobileDevice ? 'Medium' : 'High';
 const defaults = { balance:0, owned:[starterVehicleIndex], selected:starterVehicleIndex, traffic:14, weather:'Clear Day', wipers:'Auto', cabinLight:'On', cigarette:'Off', transmission:'Automatic', steering:'Touch', controllerStyle:'Wheel', steeringSensitivity:115, controlsOpacity:100, controllerLayout:defaultControllerLayout(), driveSide:'Right-hand drive', quality:defaultQuality, audio:'On', missionUnlocked:1, missionCompleted:{} };
@@ -262,7 +265,9 @@ export function buildRain(rig) {
   lines.visible = false;
   rig.add(lines);
   let phase = 0, scrollZ = 0;
-  const counts = { Low: isAndroidApp ? 0 : 400, Medium: 800, High: 1500, Ultra: 3000 };
+  const counts = isMobileDevice
+    ? { Low: 0, Medium: 800, High: 1500, Ultra: 2200 }
+    : { Low: 400, Medium: 800, High: 1500, Ultra: 3000 };
   return {
     update(wet, speed, dt, cabinHeight, quality = 'High') {
       const cap = counts[quality] ?? 1500;

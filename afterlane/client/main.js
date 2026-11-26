@@ -23,7 +23,7 @@ import { readSoloRun } from './solo-run.js';
 import { buildMissionMap, missions } from './missions.js';
 import { animateLightbar, createLightbar, createMissionActors } from './mission-actors.js';
 import { advanceFlight, createFlight, createLiftJets, flightRollAngle, startFlightRoll, toggleFlight, trafficClearance } from './flight.js';
-import { createDebugOverlay, debugToggles } from './debug.js';
+import { createDebugOverlay, debugToggles, dprOverride } from './debug.js';
 
 const viewport = document.querySelector('#viewport');
 const intro = document.querySelector('#intro');
@@ -143,7 +143,7 @@ function run(renderer, plants, driverHand, junctionAsset, initialIndex = 0, init
   const animateBirds = countryBirds(scene);
 
   const rig = group(scene);
-  const car = buildCar(rig,driverHand);
+  const car = buildCar(rig, driverHand, isMobileDevice ? 256 : 512, isMobileDevice ? 128 : 256);
   const liftJets = createLiftJets();
   car.exterior.add(liftJets);
   const actors = createMissionActors(scene);
@@ -934,15 +934,93 @@ function run(renderer, plants, driverHand, junctionAsset, initialIndex = 0, init
   const aim = new T.Vector3();
   const mirrorOffset = new T.Vector3();
   const rearView = new T.PerspectiveCamera(47,2,.16,200);
-  const TIER_MAX_DPR = { Low: 1.0, Medium: 1.35, High: 1.75, Ultra: 2.0 };
-  const SHADOW_SIZES = { Low: 0, Medium: 512, High: 1024, Ultra: 2048 };
-  const MIRROR_INTERVALS = { Low: 4, Medium: 3, High: 2, Ultra: 1 };
+  const TIER_MAX_DPR = isMobileDevice
+    ? { Low: 1.0, Medium: 1.25, High: 1.5, Ultra: 1.5 }
+    : { Low: 1.0, Medium: 1.65, High: 2.35, Ultra: 3.0 };
+  const SHADOW_SIZES = isMobileDevice
+    ? { Low: 0, Medium: 0, High: 768, Ultra: 1024 }
+    : { Low: 0, Medium: 512, High: 1024, Ultra: 2048 };
+  const MIRROR_INTERVALS = isMobileDevice
+    ? { Low: 4, Medium: 3, High: 3, Ultra: 2 }
+    : { Low: 4, Medium: 2, High: 1, Ultra: 1 };
+  const STEP_DOWN_TIER = { Ultra: 'High', High: 'Medium', Medium: 'Low' };
   const WEATHER_WET = { Clear: 0, 'Light rain': .42, 'Heavy rain': .78, Thunderstorm: 1, Snow: 0 };
   const BEAM_INTENSITY = [0, 740, 1520];
-  let currentDpr = 1, maxTierDpr = 1.75, activeShadowSize = 0;
+  let currentDpr = 1, maxTierDpr = isMobileDevice ? 1.25 : 2.35, activeShadowSize = 0;
   let lastRenderAt = 0, emaFrameMs = 16.67, emaWorkMs = 10, dprCooldownUntil = 0, fastStableSince = 0;
+  let thermalHighSince = 0, thermalCooldownUntil = 0;
+
+  // Pre-allocated animation loop structs and callbacks to keep stepScene zero-GC.
+  const missionClimate = { weather: 'Clear', daylight: 0 };
+  const driveIn = { speed: 0, gear: 1, rpm: 850 };
+  const driveParams = { dt: 0, throttle: 0, braking: 0, handbrake: 0, wet: 0, limit: 0, automatic: true, clutch: 1, traction: 1 };
+  const steerIn = { yaw: 0, yawRate: 0, lateralSpeed: 0, steerAngle: 1 };
+  const steerParams = { dt: 0, speed: 0, grip: 1, wet: 0, sensitivity: 115, traction: 1, handbrake: 0 };
+  const onTrafficNear = () => {
+    if (flight.height < .1) {
+      award(5);
+      if (activeMission?.status === 'active') activeMission.closeOvertakes++;
+      showToast('+5 NEAR PASS!', 950);
+    }
+  };
+  let currentCrashNow = 0, currentHitWidth = 1.8;
+  const onTrafficCrash = (contact, hitCar) => {
+    if (activeMission?.status === 'active') {
+      traffic.blinkAndHide(hitCar);
+      if (activeMission.spec.objectives.noScratch) {
+        activeMission.scratched = true;
+        failMission('Car scratched in No-Scratch mission!');
+        return;
+      }
+      impactGraceUntil = currentCrashNow + 700;
+      const away = x >= (hitCar?.offset ?? x) ? 1 : -1;
+      x = T.MathUtils.clamp(x + away * .55, -roadLimit + 1.18, roadLimit - 1.18);
+      speed *= .64;
+      yaw *= .4;
+      yawRate = lateralSpeed = 0;
+      audio.tick(95, .28, .22, 'sawtooth');
+      showToast('NPC CONTACT · SLOWED!', 1000);
+      if (hitFlash) {
+        hitFlash.classList.add('is-active');
+        clearTimeout(hitFlashTimer);
+        hitFlashTimer = setTimeout(() => hitFlash.classList.remove('is-active'), 220);
+      }
+      return;
+    }
+    const relSpeed = Math.max(0, speed - (hitCar?.speed ?? 0));
+    const dx = Math.abs(x - (hitCar?.offset ?? x));
+    const halfW = ((hitCar?.footprint?.width ?? 2) + currentHitWidth) * .5;
+    const crossingOrLight = Math.abs(yaw) > .014 || dx > halfW * .40 || relSpeed < 26;
+    const damage = crossingOrLight ? 0 : 25;
+    if (damage === 0 || health > damage) {
+      traffic.blinkAndHide(hitCar);
+      if (damage > 0) health = Math.max(0, health - damage);
+      impactGraceUntil = currentCrashNow + 850;
+      const away = x >= (hitCar?.offset ?? x) ? 1 : -1;
+      x = T.MathUtils.clamp(x + away * .68, -roadLimit + 1.18, roadLimit - 1.18);
+      speed *= damage === 0 ? .82 : .72;
+      yaw *= .35;
+      yawRate = lateralSpeed = 0;
+      updateDurability();
+      audio.tick(95, .24, .18, 'sawtooth');
+      showToast(damage === 0 ? 'CLOSE BRUSH · SLOWED!' : `IMPACT · ${Math.round(health)}% CAR`, 1050);
+      if (hitFlash) {
+        hitFlash.classList.add('is-active');
+        clearTimeout(hitFlashTimer);
+        hitFlashTimer = setTimeout(() => hitFlash.classList.remove('is-active'), 220);
+      }
+      return;
+    }
+    traffic.blinkAndHide(hitCar);
+    health = 0;
+    updateDurability();
+    distance = T.MathUtils.lerp(previous.distance, distance, contact);
+    x = T.MathUtils.lerp(previous.x, x, contact);
+    crash();
+  };
 
   function applyDpr(nextDpr) {
+    if (dprOverride !== null) return;
     const clamped = Math.round(T.MathUtils.clamp(nextDpr, 1.0, maxTierDpr) * 100) / 100;
     if (Math.abs(clamped - currentDpr) < .01) return;
     currentDpr = clamped;
@@ -976,8 +1054,8 @@ function run(renderer, plants, driverHand, junctionAsset, initialIndex = 0, init
     const size = playerSizes[selected];
     if (quality !== settings.quality) {
       quality = settings.quality;
-      const tierCap = TIER_MAX_DPR[quality] || 1.75;
-      maxTierDpr = Math.max(1.0, Math.min(devicePixelRatio || 1, tierCap));
+      const tierCap = TIER_MAX_DPR[quality] || (isMobileDevice ? 1.5 : 2.35);
+      maxTierDpr = dprOverride !== null ? dprOverride : Math.max(1.0, Math.min(devicePixelRatio || 1, tierCap));
       currentDpr = maxTierDpr;
       renderer.setPixelRatio(currentDpr);
       updateRoad.setQuality?.(quality);
@@ -992,20 +1070,26 @@ function run(renderer, plants, driverHand, junctionAsset, initialIndex = 0, init
           key.shadow.mapSize.set(activeShadowSize, activeShadowSize);
         }
       }
-      if (quality !== 'Ultra') effects.dispose?.();
+      if (isMobileDevice || (quality !== 'High' && quality !== 'Ultra')) effects.dispose?.();
       resize();
       emaFrameMs = 16.67;
       emaWorkMs = 10;
       fastStableSince = 0;
+      thermalHighSince = 0;
       dprCooldownUntil = now + 1500;
     }
     const progress = rooms.active ? rooms.route : routeProgress;
     const district = districtAt(distance,progress);
     const missionActive = activeMission?.status === 'active' && !rooms.active;
     const customWeather = settings.weather !== 'Clear Day' && settings.weather !== 'Dynamic';
-    const climate = missionActive && !customWeather
-      ? { weather: activeMission.spec.weather, daylight: activeMission.spec.daylight }
-      : weatherAt(rooms.active ? rooms.elapsed : gameTime,rooms.active ? 'Dynamic' : settings.weather);
+    let climate;
+    if (missionActive && !customWeather) {
+      missionClimate.weather = activeMission.spec.weather;
+      missionClimate.daylight = activeMission.spec.daylight;
+      climate = missionClimate;
+    } else {
+      climate = weatherAt(rooms.active ? rooms.elapsed : gameTime,rooms.active ? 'Dynamic' : settings.weather);
+    }
     const snowy = district.kind==='ice' || climate.weather==='Snow';
     const weather = snowy ? 'Snow' : district.kind==='desert' ? 'Clear' : climate.weather;
     const {daylight} = climate;
@@ -1057,13 +1141,20 @@ function run(renderer, plants, driverHand, junctionAsset, initialIndex = 0, init
         advanceFlight(flight,dt,Number(has('KeyT'))-Number(has('KeyG')));
       }
       engineLoad = throttle*clutch;
-      ({speed,gear,rpm} = advanceDrive({speed,gear,rpm},vehicle,{dt,throttle,braking,handbrake,wet,limit,automatic,clutch,traction}));
-      suspensionLoad = dt > 0 ? (speed-previous.speed)/dt : 0;
+      driveIn.speed = speed; driveIn.gear = gear; driveIn.rpm = rpm;
+      driveParams.dt = dt; driveParams.throttle = throttle; driveParams.braking = braking;
+      driveParams.handbrake = handbrake; driveParams.wet = wet; driveParams.limit = limit;
+      driveParams.automatic = automatic; driveParams.clutch = clutch; driveParams.traction = traction;
+      advanceDrive(driveIn, vehicle, driveParams, driveIn);
+      speed = driveIn.speed; gear = driveIn.gear; rpm = driveIn.rpm;
+      suspensionLoad = dt > 0 ? (speed - previous.speed) / dt : 0;
       suspensionSteer = steering;
-      ({yaw,yawRate,lateralSpeed,steerAngle:steerScale} = advanceSteering(
-        {yaw,yawRate,lateralSpeed},target,
-        {dt,speed,grip:vehicle.grip,wet,sensitivity:settings.steeringSensitivity,traction,handbrake}
-      ));
+      steerIn.yaw = yaw; steerIn.yawRate = yawRate; steerIn.lateralSpeed = lateralSpeed;
+      steerParams.dt = dt; steerParams.speed = speed; steerParams.grip = vehicle.grip;
+      steerParams.wet = wet; steerParams.sensitivity = settings.steeringSensitivity;
+      steerParams.traction = traction; steerParams.handbrake = handbrake;
+      advanceSteering(steerIn, target, steerParams, steerIn);
+      yaw = steerIn.yaw; yawRate = steerIn.yawRate; lateralSpeed = steerIn.lateralSpeed; steerScale = steerIn.steerAngle;
       distance += speed*Math.cos(yaw)*dt;
       const limitX = roadLimit-1.18;
       const nextX = x+lateralSpeed*dt;
@@ -1085,66 +1176,10 @@ function run(renderer, plants, driverHand, junctionAsset, initialIndex = 0, init
     updateController(vehicle);
     const model = exteriorModels[selected];
     const trafficContactPossible = Math.min(previousHeight,flight.height)<trafficClearance && now >= impactGraceUntil;
-    traffic.update(playing ? dt : 0,distance,x,rooms.active ? 0 : (isAndroidApp ? Math.min(settings.traffic, 10) : settings.traffic),playing && trafficContactPossible,speed,model.footprint,yaw,previous,() => {
-      if (flight.height<.1) {
-        award(5);
-        if (activeMission?.status === 'active') activeMission.closeOvertakes++;
-        showToast('+5 NEAR PASS!', 950);
-      }
-    }, (contact, hitCar) => {
-      if (activeMission?.status === 'active') {
-        traffic.blinkAndHide(hitCar);
-        if (activeMission.spec.objectives.noScratch) {
-          activeMission.scratched = true;
-          failMission('Car scratched in No-Scratch mission!');
-          return;
-        }
-        impactGraceUntil = now + 700;
-        const away = x >= (hitCar?.offset ?? x) ? 1 : -1;
-        x = T.MathUtils.clamp(x + away * .55, -roadLimit + 1.18, roadLimit - 1.18);
-        speed *= .64;
-        yaw *= .4;
-        yawRate = lateralSpeed = 0;
-        audio.tick(95, .28, .22, 'sawtooth');
-        showToast('NPC CONTACT · SLOWED!', 1000);
-        if (hitFlash) {
-          hitFlash.classList.add('is-active');
-          clearTimeout(hitFlashTimer);
-          hitFlashTimer = setTimeout(() => hitFlash.classList.remove('is-active'), 220);
-        }
-        return;
-      }
-      const relSpeed = Math.max(0, speed - (hitCar?.speed ?? 0));
-      const dx = Math.abs(x - (hitCar?.offset ?? x));
-      const halfW = ((hitCar?.footprint?.width ?? 2) + model.footprint.width) * .5;
-      const crossingOrLight = Math.abs(yaw) > .014 || dx > halfW * .40 || relSpeed < 26;
-      const damage = crossingOrLight ? 0 : 25;
-      if (damage === 0 || health > damage) {
-        traffic.blinkAndHide(hitCar);
-        if (damage > 0) health = Math.max(0, health - damage);
-        impactGraceUntil = now + 850;
-        const away = x >= (hitCar?.offset ?? x) ? 1 : -1;
-        x = T.MathUtils.clamp(x + away * .68, -roadLimit + 1.18, roadLimit - 1.18);
-        speed *= damage === 0 ? .82 : .72;
-        yaw *= .35;
-        yawRate = lateralSpeed = 0;
-        updateDurability();
-        audio.tick(95, .24, .18, 'sawtooth');
-        showToast(damage === 0 ? 'CLOSE BRUSH · SLOWED!' : `IMPACT · ${Math.round(health)}% CAR`, 1050);
-        if (hitFlash) {
-          hitFlash.classList.add('is-active');
-          clearTimeout(hitFlashTimer);
-          hitFlashTimer = setTimeout(() => hitFlash.classList.remove('is-active'), 220);
-        }
-        return;
-      }
-      traffic.blinkAndHide(hitCar);
-      health = 0;
-      updateDurability();
-      distance = T.MathUtils.lerp(previous.distance,distance,contact);
-      x = T.MathUtils.lerp(previous.x,x,contact);
-      crash();
-    }, quality, daylight);
+    currentCrashNow = now;
+    currentHitWidth = model.footprint.width;
+    const trafficCap = rooms.active ? 0 : (isMobileDevice ? Math.min(settings.traffic, 10) : settings.traffic);
+    traffic.update(playing ? dt : 0, distance, x, trafficCap, playing && trafficContactPossible, speed, model.footprint, yaw, previous, onTrafficNear, onTrafficCrash, quality, daylight);
     if (playing && !rooms.active && !activeMission && health < 100) {
       health = Math.min(100, health + dt * 5);
       updateDurability();
@@ -1182,6 +1217,7 @@ function run(renderer, plants, driverHand, junctionAsset, initialIndex = 0, init
       playerLightbar.position.set(0, size.height - .05, -.05);
       animateLightbar(playerLightbar, now);
     }
+    playerGlowGroup.visible = isMobileDevice && (quality === 'High' || quality === 'Ultra') && mode !== 0;
     for (const object of car.exterior.children) {
       object.visible=object===model.body || (object===liftJets && (flight.active || flight.height>.15)) || (object===playerLightbar && playerLightbar.visible) || (object===playerGlowGroup && playerGlowGroup.visible);
     }
@@ -1259,7 +1295,6 @@ function run(renderer, plants, driverHand, junctionAsset, initialIndex = 0, init
       beam.intensity = BEAM_INTENSITY[headlights]*beamGlare*(1-daylight*.82);
       beam.target.position.z = headlights === 2 ? -46 : -29;
     }
-    playerGlowGroup.visible = quality === 'High' && mode !== 0;
     if (playerGlowGroup.visible) {
       const halfW = size.width * .34, halfL = size.length * .505, headH = size.height * .42;
       headGlowMat.opacity = headlights > 0 ? (.55 + headlights * .22) * (1 - daylight * .62) : 0;
@@ -1290,6 +1325,8 @@ function run(renderer, plants, driverHand, junctionAsset, initialIndex = 0, init
       camera.updateProjectionMatrix();
     }
     if (garagePanel.open || renderer.getContext().isContextLost()) return;
+    const jsMs = performance.now() - workStart;
+    const renderStart = performance.now();
     renderer.info.reset();
     const shadowsActive = activeShadowSize > 0 && debugToggles.shadows;
     renderer.shadowMap.enabled = shadowsActive;
@@ -1320,32 +1357,52 @@ function run(renderer, plants, driverHand, junctionAsset, initialIndex = 0, init
       renderer.shadowMap.enabled = shadowsActive;
     }
     const afterMirrorCalls = renderer.info.render.calls;
-    if (quality !== 'Ultra') renderer.render(scene,camera);
-    else effects.render(now,Math.abs(speed),quality,daylight);
-    debugHud.recordPass?.(afterMirrorCalls - beforeMirrorCalls, renderer.info.render.calls - afterMirrorCalls);
+    const useEffects = !isMobileDevice && (quality === 'High' || quality === 'Ultra');
+    if (!useEffects) renderer.render(scene, camera);
+    else effects.render(now, Math.abs(speed), quality, daylight);
+    const renderMs = performance.now() - renderStart;
+    debugHud.recordPass?.(afterMirrorCalls - beforeMirrorCalls, renderer.info.render.calls - afterMirrorCalls, renderMs);
 
     const workMs = performance.now() - workStart;
     emaFrameMs = emaFrameMs * .9 + Math.min(frameMs, 100) * .1;
     emaWorkMs = emaWorkMs * .9 + Math.min(workMs, 100) * .1;
-    if (playing && maxTierDpr > 1.0 && now > 1500) {
-      if (emaFrameMs > 20.5 || emaWorkMs > 20.0) {
-        fastStableSince = 0;
-        if (now >= dprCooldownUntil && currentDpr > 1.0) {
-          applyDpr(currentDpr - .1);
-          dprCooldownUntil = now + 2200;
-        }
-      } else if (emaFrameMs < 18.0 && emaWorkMs < 13.8) {
-        if (!fastStableSince) fastStableSince = now;
-        if (now - fastStableSince >= 2000 && now >= dprCooldownUntil && currentDpr < maxTierDpr) {
-          applyDpr(currentDpr + .05);
-          dprCooldownUntil = now + 4000;
+    if (playing && now > 1500) {
+      if (dprOverride === null && maxTierDpr > 1.0) {
+        if (emaFrameMs > 20.5 || emaWorkMs > 20.0) {
+          fastStableSince = 0;
+          if (now >= dprCooldownUntil && currentDpr > 1.0) {
+            applyDpr(currentDpr - .1);
+            dprCooldownUntil = now + 2200;
+          }
+        } else if (emaFrameMs < 18.0 && emaWorkMs < 13.8) {
+          if (!fastStableSince) fastStableSince = now;
+          if (now - fastStableSince >= 2000 && now >= dprCooldownUntil && currentDpr < maxTierDpr) {
+            applyDpr(currentDpr + .05);
+            dprCooldownUntil = now + 4000;
+            fastStableSince = 0;
+          }
+        } else {
           fastStableSince = 0;
         }
-      } else {
-        fastStableSince = 0;
       }
+      // Thermal safety: sustained >22ms avg frame time for 10s steps down one quality tier.
+      if (now >= thermalCooldownUntil && emaFrameMs > 22.0 && STEP_DOWN_TIER[quality]) {
+        if (!thermalHighSince) thermalHighSince = now;
+        if (now - thermalHighSince >= 10000) {
+          const nextTier = STEP_DOWN_TIER[quality];
+          settings.quality = nextTier;
+          options.save?.();
+          showToast(`Performance mode · ${nextTier}`, 3200);
+          thermalHighSince = 0;
+          thermalCooldownUntil = now + 5000;
+        }
+      } else {
+        thermalHighSince = 0;
+      }
+    } else {
+      thermalHighSince = 0;
     }
-    debugHud.record(now, frameMs);
+    debugHud.record(now, frameMs, jsMs);
   };
   setLoading(90, 'Preparing driving view…');
   stepScene(performance.now());

@@ -8,7 +8,15 @@ export const roadX = distance => bendAmplitude * Math.sin(distance / bendScale)
 export const roadYaw = distance => -Math.atan(bendAmplitude / bendScale * Math.cos(distance / bendScale)
   - secondaryAmplitude / secondaryScale * Math.cos(distance / secondaryScale));
 
-export function roadPosition(station,offset) {
+export function roadPosition(station,offset,out=null) {
   const heading = roadYaw(station);
-  return {x:roadX(station)+offset*Math.cos(heading),z:-station-offset*Math.sin(heading),heading};
+  const x = roadX(station)+offset*Math.cos(heading);
+  const z = -station-offset*Math.sin(heading);
+  if (out) {
+    out.x = x;
+    out.z = z;
+    out.heading = heading;
+    return out;
+  }
+  return {x,z,heading};
 }

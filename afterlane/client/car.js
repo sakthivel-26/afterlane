@@ -129,7 +129,7 @@ export async function loadDriverHand() {
   }
 }
 
-export function buildCar(rig,driverHand=null) {
+export function buildCar(rig,driverHand=null,mirrorWidth=256,mirrorHeight=128) {
   const exterior = group(rig);
   const cabin = group(rig);
   const rubber = surface(0x111216);
@@ -239,7 +239,7 @@ export function buildCar(rig,driverHand=null) {
   box(cabin, rubber, 0, 1.46, -.843, .33, .094, .025);
   const mirrors = [];
   function mirror(x,y,z,w,h,look,yaw) {
-    const target = new T.WebGLRenderTarget(256,128);
+    const target = new T.WebGLRenderTarget(mirrorWidth,mirrorHeight);
     target.texture.generateMipmaps = false;
     const material = new T.MeshBasicMaterial({map:target.texture,toneMapped:false});
     const face = mesh(cabin,new T.PlaneGeometry(w,h),material,x,y,z);
@@ -604,6 +604,7 @@ export function loadVehicleAsset(vehicle) {
   return vehicleAssets.get(vehicle.asset);
 }
 
+const dialLabels = new Array(7);
 export function drawGauges({ctx, texture}, speed, headlights, rpm = 850, gear = 1, signal = 0, maximum = 332) {
   ctx.fillStyle = '#0d1319'; ctx.fillRect(0,0,768,252);
   const dial = (x, value, labels, caption) => {
@@ -628,7 +629,8 @@ export function drawGauges({ctx, texture}, speed, headlights, rpm = 850, gear = 
   };
   const kmh = Math.round(speed*3.6);
   const scale = Math.ceil(maximum/60)*60;
-  dial(131,kmh/scale,Array.from({length:7},(_,i)=>i*scale/6),'km/h');
+  for (let i = 0; i < 7; i++) dialLabels[i] = i * scale / 6;
+  dial(131,kmh/scale,dialLabels,'km/h');
   ctx.textAlign = 'center';
   ctx.fillStyle = '#fff3db'; ctx.font = '700 82px monospace'; ctx.fillText(kmh,384,143);
   ctx.fillStyle = '#adbec5'; ctx.font = '19px system-ui'; ctx.fillText('KM/H',384,173);

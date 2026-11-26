@@ -627,7 +627,7 @@ export function buildRoad(scene, plants, junctionAsset) {
         slot.number = number;
         slot.district = district;
       }
-      if (slot.cables) slot.cables.visible = roadZ > -190 && roadZ < 24;
+      if (slot.cables) slot.cables.visible = roadZ > (isMobileDevice ? -140 : -200) && roadZ < 24;
 
       // Update per-frame instanced road deck accessories
       tmpPos.set(0, -.055 - (slot.n % 2) * .001, 0);

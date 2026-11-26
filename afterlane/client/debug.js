@@ -1,4 +1,8 @@
-export const debugEnabled = new URLSearchParams(location.search).get('debug') === '1';
+const searchParams = typeof location !== 'undefined' ? new URLSearchParams(location.search) : null;
+export const debugEnabled = searchParams?.get('debug') === '1';
+const rawDpr = searchParams?.get('dpr');
+const parsedDpr = rawDpr !== null ? Number(rawDpr) : NaN;
+export const dprOverride = Number.isFinite(parsedDpr) && parsedDpr > 0 ? Math.min(parsedDpr, 3) : null;
 
 export const debugToggles = {
   rain: true,
@@ -15,6 +19,8 @@ export function createDebugOverlay({ renderer, scene, camera, getQuality, setQua
     fps: 0,
     avgMs: 0,
     frameMs: 0,
+    jsMs: 0,
+    renderMs: 0,
     calls: 0,
     mainCalls: 0,
     mirrorCalls: 0,
@@ -22,6 +28,7 @@ export function createDebugOverlay({ renderer, scene, camera, getQuality, setQua
     geometries: 0,
     textures: 0,
     dpr: 1,
+    dprOverride,
     quality: 'Medium',
   };
 
@@ -124,11 +131,12 @@ export function createDebugOverlay({ renderer, scene, camera, getQuality, setQua
 
   return {
     stats,
-    recordPass(mirrorCalls, mainCalls) {
+    recordPass(mirrorCalls, mainCalls, renderMs = 0) {
       stats.mirrorCalls = mirrorCalls;
       stats.mainCalls = mainCalls;
+      stats.renderMs = +renderMs.toFixed(2);
     },
-    record(now, frameMs) {
+    record(now, frameMs, jsMs = 0) {
       if (!windowStart) windowStart = now;
       if (frameMs > 0 && frameMs < 500) {
         emaMs = emaMs * 0.9 + frameMs * 0.1;
@@ -147,6 +155,7 @@ export function createDebugOverlay({ renderer, scene, camera, getQuality, setQua
         stats.fps = Math.round(1000 / Math.max(1, emaMs));
       }
       stats.frameMs = +frameMs.toFixed(2);
+      stats.jsMs = +jsMs.toFixed(2);
       stats.calls = renderer.info.render.calls;
       stats.triangles = renderer.info.render.triangles;
       stats.geometries = renderer.info.memory.geometries;
@@ -157,10 +166,10 @@ export function createDebugOverlay({ renderer, scene, camera, getQuality, setQua
       if (now - lastHudAt >= 200) {
         lastHudAt = now;
         pre.textContent =
-          `FPS ${String(stats.fps).padStart(3)} | ${stats.avgMs.toFixed(1)}ms (now ${stats.frameMs.toFixed(1)}ms)\n` +
+          `FPS ${String(stats.fps).padStart(3)} | ${stats.avgMs.toFixed(1)}ms (JS ${stats.jsMs.toFixed(1)}ms / R ${stats.renderMs.toFixed(1)}ms)\n` +
           `Calls ${stats.calls} | Tris ${stats.triangles.toLocaleString()}\n` +
           `Geom ${stats.geometries} | Tex ${stats.textures}\n` +
-          `Tier ${stats.quality} | DPR ${stats.dpr.toFixed(2)}`;
+          `Tier ${stats.quality} | DPR ${stats.dpr.toFixed(2)}${dprOverride ? ' [LOCK]' : ''}`;
       }
     },
   };

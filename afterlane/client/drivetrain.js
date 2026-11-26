@@ -6,7 +6,7 @@ export function gearSpeed(vehicle,gear,rpm=vehicle.engine.redline) {
   return Math.PI*diameter*rpm/(60*finalDrive*ratio);
 }
 
-export function advanceDrive({speed,gear,rpm},vehicle,{dt,throttle,braking,handbrake=0,wet,limit,automatic,clutch,traction=1}) {
+export function advanceDrive({speed,gear,rpm},vehicle,{dt,throttle,braking,handbrake=0,wet,limit,automatic,clutch,traction=1},out=null) {
   const redline = vehicle.engine.redline;
   const idle = vehicle.engine.tone === 'diesel' ? 750 : 850;
   const {ratios,reverse} = vehicle.transmission;
@@ -31,7 +31,14 @@ export function advanceDrive({speed,gear,rpm},vehicle,{dt,throttle,braking,handb
   const resistance = drag+brakeForce*vehicle.brake*(1-wet*.17)*traction;
   speed = Math.sign(speed)*Math.max(0,Math.abs(speed)-resistance*dt);
   if (!brakeForce && Math.abs(speed)<revLimit) speed += direction*Math.min(Math.abs(engine*dt),revLimit-Math.abs(speed));
-  return {speed:clamp(speed,-5,limit),gear,rpm};
+  const nextSpeed = clamp(speed,-5,limit);
+  if (out) {
+    out.speed = nextSpeed;
+    out.gear = gear;
+    out.rpm = rpm;
+    return out;
+  }
+  return {speed:nextSpeed,gear,rpm};
 }
 
 const smoothstep = (x,edge0,edge1) => {
@@ -43,9 +50,13 @@ export function steeringRate(speed,grip,wet,sensitivity,traction=1) {
   return Math.sign(speed)*Math.min(Math.abs(speed)*.40,6.8)*grip*(1-wet*.075)*sensitivity/100*traction;
 }
 
-export function advanceSteering({yaw,yawRate,lateralSpeed},target,{dt,speed,grip,wet,sensitivity,traction=1,handbrake=0}) {
+export function advanceSteering({yaw,yawRate,lateralSpeed},target,{dt,speed,grip,wet,sensitivity,traction=1,handbrake=0},out=null) {
   const absSpeed = Math.abs(speed);
   if (absSpeed < .1) {
+    if (out) {
+      out.yaw = 0; out.yawRate = 0; out.lateralSpeed = 0; out.steerAngle = 0;
+      return out;
+    }
     return {yaw:0,yawRate:0,lateralSpeed:0,steerAngle:0};
   }
   const reverseSign = speed < -.2 ? -1 : 1;
@@ -66,5 +77,12 @@ export function advanceSteering({yaw,yawRate,lateralSpeed},target,{dt,speed,grip
   const desiredLateral = -speed*Math.sin(yaw);
   const lateralGrip = 26*grip*traction*(1-wet*.22)*(handbrake ? .45 : 1);
   lateralSpeed += (desiredLateral-lateralSpeed)*(1-Math.exp(-dt*lateralGrip));
+  if (out) {
+    out.yaw = yaw;
+    out.yawRate = yawRate;
+    out.lateralSpeed = lateralSpeed;
+    out.steerAngle = highSpeedScale;
+    return out;
+  }
   return {yaw,yawRate,lateralSpeed,steerAngle:highSpeedScale};
 }
