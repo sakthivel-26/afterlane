@@ -5,10 +5,46 @@ import { normalizeChaseControls } from './chase-camera.js';
 import { applyControllerLayout, createLayoutEditor, defaultControllerLayout, normalizeControllerLayout } from './touch-layout.js';
 
 const key = 'afterlane-profile-v2';
+const idbName = 'afterlane-mobile-storage';
+const idbStore = 'profile';
 const starterVehicleIndex = 11; // Classic Mini
 const isAndroidApp = navigator.userAgent.includes('AfterlaneAndroid');
 const defaultQuality = isAndroidApp ? 'Medium' : 'High';
 const defaults = { balance:0, owned:[starterVehicleIndex], selected:starterVehicleIndex, traffic:14, weather:'Clear Day', wipers:'Auto', cabinLight:'On', cigarette:'Off', transmission:'Automatic', steering:'Touch', controllerStyle:'Wheel', steeringSensitivity:115, controlsOpacity:100, controllerLayout:defaultControllerLayout(), driveSide:'Right-hand drive', quality:defaultQuality, audio:'On', missionUnlocked:1, missionCompleted:{} };
+
+if (typeof navigator !== 'undefined' && navigator.storage?.persist) {
+  void navigator.storage.persist().catch(() => {});
+}
+
+function openProfileDb() {
+  return new Promise((resolve, reject) => {
+    if (typeof indexedDB === 'undefined') { reject(new Error('No IndexedDB')); return; }
+    const req = indexedDB.open(idbName, 1);
+    req.onupgradeneeded = () => {
+      if (!req.result.objectStoreNames.contains(idbStore)) req.result.createObjectStore(idbStore);
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+function idbPut(profile) {
+  void openProfileDb().then(db => {
+    const tx = db.transaction(idbStore, 'readwrite');
+    tx.objectStore(idbStore).put(profile, key);
+    tx.oncomplete = () => db.close();
+    tx.onerror = () => db.close();
+  }).catch(() => {});
+}
+
+function idbGet() {
+  return openProfileDb().then(db => new Promise(resolve => {
+    const tx = db.transaction(idbStore, 'readonly');
+    const req = tx.objectStore(idbStore).get(key);
+    req.onsuccess = () => { db.close(); resolve(req.result && typeof req.result === 'object' ? req.result : null); };
+    req.onerror = () => { db.close(); resolve(null); };
+  })).catch(() => null);
+}
 
 function storedProfile() {
   try {
@@ -17,28 +53,52 @@ function storedProfile() {
   } catch { return {}; }
 }
 
+export async function hydrateMobileStorage() {
+  if (localStorage.getItem(key)) return false;
+  const backup = await idbGet();
+  if (!backup) return false;
+  try { localStorage.setItem(key, JSON.stringify(backup)); } catch { return false; }
+  return true;
+}
+
 export function buildOptions(pause, trafficChanged, garageActions) {
+  const hasLocal = Boolean(localStorage.getItem(key));
   const savedProfile = storedProfile();
   const settings = {...defaults,...savedProfile};
-  if (!Number.isFinite(settings.balance)) settings.balance=0;
-  normalizeChaseControls(settings);
-  normalizeControllerLayout(settings);
-  const normalizeRange = (field,min,max)=>{
-    const value = settings[field];
-    settings[field] = Number.isFinite(value) ? T.MathUtils.clamp(value,min,max) : defaults[field];
+  const applyNormalized = source => {
+    if (!Number.isFinite(settings.balance)) settings.balance=0;
+    normalizeChaseControls(settings);
+    normalizeControllerLayout(settings);
+    const normalizeRange = (field,min,max)=>{
+      const value = settings[field];
+      settings[field] = Number.isFinite(value) ? T.MathUtils.clamp(value,min,max) : defaults[field];
+    };
+    normalizeRange('steeringSensitivity',65,150);
+    normalizeRange('controlsOpacity',35,100);
+    settings.missionUnlocked = Number.isInteger(settings.missionUnlocked) ? T.MathUtils.clamp(settings.missionUnlocked,1,50) : 1;
+    if (!settings.missionCompleted || typeof settings.missionCompleted !== 'object' || Array.isArray(settings.missionCompleted)) settings.missionCompleted = {};
+    settings.controllerStyle = settings.controllerStyle==='Arrows' ? 'Arrows' : 'Wheel';
+    applyControllerLayout(settings);
+    const ownedSrc = source && typeof source === 'object' ? source : {};
+    const savedOwned = Array.isArray(ownedSrc.owned) ? ownedSrc.owned.filter(index=>Number.isInteger(index) && vehicles[index]) : [];
+    const unlockedM4 = Boolean(settings.missionCompleted?.[5]);
+    const baseOwned = savedOwned.filter(index => index !== 0 || unlockedM4 || settings.bmwM4Bought);
+    settings.owned = [...new Set([starterVehicleIndex, ...(unlockedM4 ? [0] : []), ...baseOwned])];
+    if (!settings.owned.includes(settings.selected)) settings.selected = starterVehicleIndex;
   };
-  normalizeRange('steeringSensitivity',65,150);
-  normalizeRange('controlsOpacity',35,100);
-  settings.missionUnlocked = Number.isInteger(settings.missionUnlocked) ? T.MathUtils.clamp(settings.missionUnlocked,1,50) : 1;
-  if (!settings.missionCompleted || typeof settings.missionCompleted !== 'object' || Array.isArray(settings.missionCompleted)) settings.missionCompleted = {};
-  settings.controllerStyle = settings.controllerStyle==='Arrows' ? 'Arrows' : 'Wheel';
-  applyControllerLayout(settings);
-  const savedOwned = Array.isArray(savedProfile.owned) ? savedProfile.owned.filter(index=>Number.isInteger(index) && vehicles[index]) : [];
-  const unlockedM4 = Boolean(settings.missionCompleted?.[5]);
-  const baseOwned = savedOwned.filter(index => index !== 0 || unlockedM4 || settings.bmwM4Bought);
-  settings.owned = [...new Set([starterVehicleIndex, ...(unlockedM4 ? [0] : []), ...baseOwned])];
-  if (!settings.owned.includes(settings.selected)) settings.selected = starterVehicleIndex;
+  applyNormalized(savedProfile);
   let lastSaved = JSON.parse(JSON.stringify(settings));
+  if (hasLocal) idbPut(lastSaved);
+  else {
+    void idbGet().then(backup => {
+      if (!backup || localStorage.getItem(key)) return;
+      Object.assign(settings, defaults, backup);
+      applyNormalized(backup);
+      try { localStorage.setItem(key, JSON.stringify(settings)); } catch {}
+      lastSaved = JSON.parse(JSON.stringify(settings));
+      garageActions?.onHydrate?.();
+    });
+  }
   function save() {
     try {
       const latest = storedProfile();
@@ -48,6 +108,7 @@ export function buildOptions(pause, trafficChanged, garageActions) {
       }
       if (Number.isFinite(latest.balance)) changed.balance=latest.balance+settings.balance-lastSaved.balance;
       localStorage.setItem(key,JSON.stringify(changed));
+      idbPut(changed);
       settings.balance=changed.balance;
       lastSaved=JSON.parse(JSON.stringify(settings));
     } catch { /* Current session still works. */ }

@@ -220,8 +220,8 @@ export function vehicleBody(parent, type, color, style = '') {
   const assembly = group(parent);
   assembly.name = style || type;
   const body = group(assembly);
-  const paint = new T.MeshPhysicalMaterial({color,roughness:.31,metalness:.26,clearcoat:.55});
-  const tail = luminous(0xff2639);
+  const paint = new T.MeshPhysicalMaterial({color,roughness:.24,metalness:.30,clearcoat:.72,clearcoatRoughness:.14});
+  const tail = new T.MeshBasicMaterial({color:0xff2438,toneMapped:false});
   const heavy = type === 'Heavy truck' || type === 'Bus';
   const pickup = type === 'Pickup';
   const sports = type === 'Sports car';
@@ -498,12 +498,75 @@ export function vehicleBody(parent, type, color, style = '') {
     footprint:proceduralFootprints.get(footprintKey)};
 }
 
+function buildTailGlowTexture() {
+  const size = 64;
+  const pixels = new Uint8Array(size * size * 4);
+  for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
+    const dx = (x + .5) / size * 2 - 1;
+    const dy = (y + .5) / size * 2 - 1;
+    const r = Math.hypot(dx * 0.85, dy * 1.15);
+    const a = Math.exp(-r * r * 5.2) * Math.max(0, 1 - r);
+    const i = (y * size + x) * 4;
+    pixels[i] = 255;
+    pixels[i + 1] = 48;
+    pixels[i + 2] = 68;
+    pixels[i + 3] = Math.round(255 * a);
+  }
+  const texture = new T.DataTexture(pixels, size, size, T.RGBAFormat);
+  texture.minFilter = texture.magFilter = T.LinearFilter;
+  texture.needsUpdate = true;
+  return texture;
+}
+
+const tailGlowMaterial = new T.MeshBasicMaterial({
+  map: buildTailGlowTexture(),
+  transparent: true,
+  depthWrite: false,
+  blending: T.AdditiveBlending,
+  toneMapped: false,
+  opacity: .85,
+});
+const retroReflectorMaterial = new T.MeshPhysicalMaterial({
+  color: 0xe82c3a,
+  roughness: .06,
+  metalness: .42,
+  clearcoat: .95,
+  clearcoatRoughness: .05,
+  emissive: 0x3b080e,
+});
+const rearChromeTrimMaterial = new T.MeshPhysicalMaterial({
+  color: 0xc2ccd6,
+  roughness: .10,
+  metalness: .88,
+  clearcoat: .90,
+  clearcoatRoughness: .08,
+});
+const tailGlowGeometry = new T.PlaneGeometry(1, 1);
+
 export function trafficVehicle(parent,type,color,style,asset,prepareShader=null) {
   const car = vehicleBody(parent,type,color,style);
   applyTrafficHeadlightReflection(car.body,car.body.userData.paint);
   const fallbackFootprint = car.footprint;
   const fallback = car.body.children.filter(part=>part.name!=='Contact shade');
   const {height} = dimensions(type,style);
+  const heavy = type === 'Heavy truck' || type === 'Bus';
+  const tailY = heavy ? height * .34 : T.MathUtils.clamp(height * .48, .56, .98);
+  const tailZ = car.length * .506;
+  const reflectorY = Math.max(.36, tailY - (heavy ? .14 : .16));
+  const lampW = Math.max(.20, car.width * .19);
+  const trimStrip = box(car.body, rearChromeTrimMaterial, 0, Math.max(.42, reflectorY + .06), tailZ, car.width * .46, .024, .018);
+  trimStrip.userData.sharedVehicleGeometry = true;
+  for (const side of [-1, 1]) {
+    const tailX = side * car.width * .34;
+    const lamp = box(car.body, car.body.userData.tailLight, tailX, tailY, tailZ, lampW, heavy ? .115 : .072, .038);
+    lamp.userData.sharedVehicleGeometry = true;
+    const reflector = box(car.body, retroReflectorMaterial, tailX, reflectorY, tailZ + .002, lampW * .92, .044, .024);
+    reflector.userData.sharedVehicleGeometry = true;
+    const halo = mesh(car.body, tailGlowGeometry, tailGlowMaterial, tailX, tailY, tailZ + .028);
+    halo.scale.set(car.width * .46, .44, 1);
+    halo.userData.sharedVehicleGeometry = true;
+  }
+  car.body.userData.tailGlowMaterial = tailGlowMaterial;
   const indicators = [-1,1].map(side=>[-1,1].map(end=>{
     const light = mesh(car.body,indicatorGeometry,indicatorLamp,side*car.width*.38,height*.52,end*(car.length*.5+.025));
     light.visible = false;

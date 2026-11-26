@@ -1,20 +1,20 @@
 import * as T from 'three';
 
 const capacity = 56;
-const tailColor = new T.Color(0xff2639);
+const tailColor = new T.Color(0xff2438);
 const headColor = new T.Color(0xffe8c8);
 const headlightReflection = {value:1};
 const reflectiveTrafficMaterials = new WeakMap();
-// The two player headlamps are the scene's spotlights. Limit their contribution
-// to traffic materials before a close highlight reaches the bloom pass.
+// The two player headlamps are the scene's spotlights. Let them brightly illuminate
+// NPC rear surfaces and retro-reflectors without clipping into bloom artifacts.
 const trafficLightShader = T.ShaderChunk.lights_fragment_begin.replace(
   /(getSpotLightInfo\([^;]+\);[\s\S]*?)(RE_Direct\([^;]+\);)/,
   (_,spotSetup,light)=>`${spotSetup}{
     directLight.color *= npcHeadlightReflection;
     float incoming = max(max(directLight.color.r,directLight.color.g),directLight.color.b);
-    float reflectionLimit = mix(.46,2.20,npcHeadlightReflection);
+    float reflectionLimit = mix(1.2,3.4,clamp(npcHeadlightReflection,0.,1.2));
     directLight.color *= min(1.,reflectionLimit/max(incoming,1e-5));
-    float glintLimit = mix(.025,.22,npcHeadlightReflection);
+    float glintLimit = mix(.18,.68,clamp(npcHeadlightReflection,0.,1.2));
     vec3 specularBefore = reflectedLight.directSpecular;
     #ifdef USE_CLEARCOAT
       vec3 clearcoatBefore = clearcoatSpecularDirect;
@@ -34,14 +34,22 @@ const trafficLightShader = T.ShaderChunk.lights_fragment_begin.replace(
 );
 
 export function nighttimeReflection(daylight) {
-  return .14+.86*T.MathUtils.smoothstep(daylight,.025,.12);
+  return 1.12 - .24 * T.MathUtils.smoothstep(daylight, .05, .45);
 }
 
 export function applyTrafficHeadlightReflection(body,ownedPaint) {
-  const decorate = source=>{
-    if (!source.isMeshStandardMaterial) return source;
+  const decorate = (source, meshName = '')=>{
+    if (!source?.isMeshStandardMaterial) return source;
+    const isTire = /tire|wheel|rubber|tread/i.test(meshName) || /tire|wheel|rubber|tread/i.test(source.name || '');
     if (reflectiveTrafficMaterials.has(source)) return reflectiveTrafficMaterials.get(source);
     const material = source===ownedPaint ? source : source.clone();
+    if (!isTire && material !== ownedPaint) {
+      material.roughness = Math.min(typeof material.roughness === 'number' ? material.roughness : .45, .36);
+      if (material.isMeshPhysicalMaterial) {
+        material.clearcoat = Math.max(material.clearcoat || 0, .55);
+        material.clearcoatRoughness = Math.min(material.clearcoatRoughness ?? .2, .16);
+      }
+    }
     const originalKey = source.customProgramCacheKey();
     material.onBeforeCompile = shader=>{
       shader.uniforms.npcHeadlightReflection = headlightReflection;
@@ -49,12 +57,12 @@ export function applyTrafficHeadlightReflection(body,ownedPaint) {
         '#include <lights_fragment_begin>',trafficLightShader,
       );
     };
-    material.customProgramCacheKey = ()=>originalKey+'|afterlane-traffic-reflection-clamp';
+    material.customProgramCacheKey = ()=>originalKey+'|afterlane-traffic-reflection-v2';
     reflectiveTrafficMaterials.set(source,material);
     return material;
   };
   body.traverse(node=>{
-    if (node.isMesh) node.material = Array.isArray(node.material) ? node.material.map(decorate) : decorate(node.material);
+    if (node.isMesh) node.material = Array.isArray(node.material) ? node.material.map(m => decorate(m, node.name)) : decorate(node.material, node.name);
   });
 }
 
@@ -112,8 +120,11 @@ export function trafficLighting(scene,visitTraffic) {
     visitTraffic(car=> {
       const gap = car.station-distance;
       const ahead = gap>0;
-      const glare = cabin && ahead ? .64+.36*T.MathUtils.smoothstep(gap,5,29) : 1;
-      car.body.userData.tailLight.color.copy(tailColor).multiplyScalar(glare);
+      const glare = cabin && ahead ? 1.05+.35*T.MathUtils.smoothstep(gap,5,30) : 1.15;
+      car.body.userData.tailLight?.color.copy(tailColor).multiplyScalar(glare);
+      if (car.body.userData.tailGlowMaterial) {
+        car.body.userData.tailGlowMaterial.opacity = .52 + .44 * (1 - daylight);
+      }
       if (cabin && ahead && Math.abs(car.offset-x)<2.7) {
         beam=Math.min(beam,.80+.20*T.MathUtils.smoothstep(gap,4,21));
       }

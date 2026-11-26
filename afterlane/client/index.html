@@ -56,6 +56,7 @@
   <details id="top-menu">
     <summary aria-label="Game menu" title="Game menu"><i></i><i></i><i></i></summary>
     <nav aria-label="Game options">
+      <button id="home-menu" type="button">Home page</button>
       <button id="multiplayer" type="button">Multiplayer</button>
       <button id="settings" type="button">Settings</button>
       <button id="custom-controls" type="button">Custom controller</button>
@@ -93,7 +94,10 @@
 <p id="touch-orientation">Rotate your phone for landscape driving.</p>
 </section>
 <p id="error" role="alert" hidden></p>
-<output id="road-speed" aria-label="Speed">0 km/h</output>
+<div id="hud-top-left" aria-label="Speed and points">
+  <output id="road-speed" aria-label="Speed">0 km/h</output>
+  <output id="drive-points" aria-label="Total points">0 pts</output>
+</div>
 <div id="drive-durability" hidden aria-label="Vehicle durability">
   <span class="durability-label">Car</span>
   <div class="durability-track"><div id="durability-fill"></div></div>

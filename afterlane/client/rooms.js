@@ -151,6 +151,12 @@ export function connectRooms(scene, settings, hooks) {
   return {
     get active() { return Boolean(roomCode); },
     get canDrive() { return begun && !finished && Date.now()-clockOffset >= respawnUntil; },
+    leave() {
+      if (!roomCode) return;
+      socket.emit('leave-room');
+      clear();
+      hooks.leave();
+    },
     get elapsed() { return state?.elapsed ?? 0; },
     get route() { return state?.route ?? waitingRoute; },
     get score() { return state?.players.find(player => player.id === socket.id)?.score || 0; },

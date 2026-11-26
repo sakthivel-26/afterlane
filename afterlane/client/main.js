@@ -4,7 +4,7 @@ import { buildCar, drawGauges, group, loadDriverHand, loadVehicleAsset } from '.
 import { buildRoad, buildSky, loadJunctionAsset, roadLimit, roadX, roadYaw } from './road.js';
 import { buildTraffic, vehicleBody } from './traffic.js';
 import { dimensions, vehicles } from './vehicle-specs.js';
-import { buildRain, buildOptions } from './options.js';
+import { buildRain, buildOptions, hydrateMobileStorage } from './options.js';
 import { connectRooms } from './rooms.js';
 import { drivingAudio } from './audio.js';
 import { drivingEffects } from './effects.js';
@@ -61,6 +61,7 @@ const isAndroidApp = navigator.userAgent.includes('AfterlaneAndroid');
 let renderer;
 try {
   setLoading(12, 'Initializing graphics engine…');
+  await hydrateMobileStorage();
   renderer = new T.WebGLRenderer({ antialias: !isAndroidApp, powerPreference: 'high-performance' });
   const initialIndex = initialVehicleIndex();
   let loadedSteps = 0;
@@ -179,6 +180,7 @@ function run(renderer, plants, driverHand, junctionAsset, initialIndex = 0, init
   const flightButton = document.querySelector('#flight-toggle');
   const flightStatus = document.querySelector('#flight-status');
   const roadSpeed = document.querySelector('#road-speed');
+  const drivePoints = document.querySelector('#drive-points');
   const flightCharge = document.querySelector('#flight-charge');
   const flightPercent = document.querySelector('#flight-percent');
   const verticalButtons = flightControls.querySelectorAll('[data-drive]');
@@ -191,9 +193,9 @@ function run(renderer, plants, driverHand, junctionAsset, initialIndex = 0, init
   const lamps = group(rig);
   const beams = [];
   for (const side of [-1, 1]) {
-    const beam = new T.SpotLight(0xffe1ba, isAndroidApp ? 400 : 620, isAndroidApp ? 55 : 85, .24, .62, 1.12);
+    const beam = new T.SpotLight(0xffe1ba, isAndroidApp ? 460 : 740, isAndroidApp ? 65 : 95, .28, .62, 1.08);
     beam.position.set(side*.67,.83,-2.22);
-    beam.target.position.set(side*.9, .05, -29);
+    beam.target.position.set(side*.85, .05, -29);
     lamps.add(beam, beam.target);
     beams.push(beam);
   }
@@ -241,9 +243,25 @@ function run(renderer, plants, driverHand, junctionAsset, initialIndex = 0, init
       const vehicle=vehicles[settings.selected];
       drawGauges(car.gauges,Math.abs(speed),headlights,rpm,vehicle.electric ? 'EV' : gear,0,vehicle.speed);
       requestModel(settings.selected);
+      updatePointsHud();
+    },
+    onHydrate:() => {
+      updatePointsHud();
+      if (!playing && !activeMission && !rooms.active) restoreSolo();
     }
   });
   const settings = options.settings;
+  let lastPointsLabel = '';
+  function updatePointsHud() {
+    if (!drivePoints) return;
+    const total = Number.isFinite(settings.balance) ? Math.max(0, Math.round(settings.balance)) : 0;
+    const label = `${total.toLocaleString()} pts`;
+    if (lastPointsLabel !== label) {
+      lastPointsLabel = label;
+      drivePoints.value = label;
+    }
+  }
+  updatePointsHud();
   const durabilityBox = document.querySelector('#drive-durability');
   const durabilityFill = document.querySelector('#durability-fill');
   const durabilityPct = document.querySelector('#durability-pct');
@@ -590,6 +608,7 @@ function run(renderer, plants, driverHand, junctionAsset, initialIndex = 0, init
   function award(amount) {
     points += amount;
     settings.balance += amount;
+    updatePointsHud();
     soloDirty=true;
     saveSolo();
   }
@@ -710,6 +729,7 @@ function run(renderer, plants, driverHand, junctionAsset, initialIndex = 0, init
   function updateController(vehicle) {
     const speedLabel = Math.round(Math.abs(speed)*3.6)+' km/h';
     if (roadSpeed.value!==speedLabel) roadSpeed.value=speedLabel;
+    updatePointsHud();
     touchTransmission.hidden = Boolean(vehicle.electric);
     flightControls.hidden = !playing || !vehicle.flight || rooms.active;
     if (!flightControls.hidden) {
@@ -784,6 +804,15 @@ function run(renderer, plants, driverHand, junctionAsset, initialIndex = 0, init
     }
     setPlaying(true);
   });
+  const homeMenuBtn = document.querySelector('#home-menu');
+  homeMenuBtn?.addEventListener('click', () => {
+    options.panel?.close();
+    document.querySelector('#garage-panel')?.close();
+    document.querySelector('#mission-dialog')?.close();
+    if (rooms.active) rooms.leave();
+    saveSolo();
+    restoreSolo();
+  });
   view.addEventListener('click', () => { switchView(); view.blur(); });
   hudCamera?.addEventListener('click', () => { switchView(); hudCamera.blur(); });
   menu.addEventListener('click',event=>{ if (event.target.closest('button')) menu.open=false; });
@@ -820,8 +849,16 @@ function run(renderer, plants, driverHand, junctionAsset, initialIndex = 0, init
   });
   window.addEventListener('keyup', event => held.delete(event.code));
   window.addEventListener('blur', () => { if (playing) setPlaying(false); });
-  window.addEventListener('pagehide',saveSolo);
-  document.addEventListener('visibilitychange',()=>{ if (document.hidden && playing) setPlaying(false); });
+  const flushProgress = () => {
+    if (soloDirty) saveSolo();
+  };
+  window.addEventListener('pagehide', flushProgress);
+  document.addEventListener('visibilitychange',()=>{
+    if (document.hidden) {
+      if (playing) setPlaying(false);
+      flushProgress();
+    }
+  });
   const resize = () => {
     camera.aspect = viewport.clientWidth / Math.max(1,viewport.clientHeight);
     camera.updateProjectionMatrix();
@@ -1062,8 +1099,8 @@ function run(renderer, plants, driverHand, junctionAsset, initialIndex = 0, init
       camera.lookAt(rig.localToWorld(aim));
       camera.rotateZ(-steering*Math.min(Math.abs(speed)/650,.042));
     } else if (mode === 1) {
-      eye.set(0, 1.12+bob+tall, -size.length*.365);
-      aim.set(0, .9, -14);
+      eye.set(0, Math.max(.92, size.height * .86) + bob, -size.length * .40);
+      aim.set(0, Math.max(.75, size.height * .68), -14);
       camera.position.copy(rig.localToWorld(eye));
       camera.lookAt(rig.localToWorld(aim));
     } else {
@@ -1111,7 +1148,7 @@ function run(renderer, plants, driverHand, junctionAsset, initialIndex = 0, init
     moon.intensity = (.12+neighborhoodLight*.10)*(1-wet*.85)*(1-daylight)+flash*4.5;
     renderer.toneMappingExposure = 1 - daylight*.16;
     for (const beam of beams) {
-      beam.intensity = [0,620,1330][headlights]*beamGlare*(1-daylight*.86);
+      beam.intensity = [0,740,1520][headlights]*beamGlare*(1-daylight*.82);
       beam.target.position.z = headlights === 2 ? -46 : -29;
     }
     const acceleration = dt > 0 ? (Math.abs(speed)-Math.abs(previous.speed))/dt : 0;

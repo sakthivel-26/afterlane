@@ -220,7 +220,7 @@ header.game-menu {
 }
 body.editing-controls #intro,
 body.editing-controls header.game-menu,
-body.editing-controls #road-speed,
+body.editing-controls #hud-top-left,
 body.editing-controls #drive-durability,
 body.editing-controls #mission-hud { display:none !important; }
 body.editing-controls #touch-drive {
