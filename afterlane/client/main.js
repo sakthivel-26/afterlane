@@ -427,9 +427,11 @@ function run(renderer, plants, driverHand, junctionAsset, initialIndex = 0, init
     if (spec.mode === 'flee') {
       const st = actors.policeStatus(distance, x);
       activeMission.policeGap = st.closest;
-      activeMission.bustPct = st.pinning
-        ? Math.min(100, activeMission.bustPct + dt * 28)
-        : Math.max(0, activeMission.bustPct - dt * 18);
+      const elapsed = spec.timeLimit - activeMission.remaining;
+      const canPin = st.pinning && elapsed >= 5;
+      activeMission.bustPct = canPin
+        ? Math.min(100, activeMission.bustPct + dt * 18)
+        : Math.max(0, activeMission.bustPct - dt * 24);
       if (activeMission.bustPct >= 100) {
         failMission('Busted by police!');
       } else if (o.surviveTimer) {

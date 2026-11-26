@@ -95,18 +95,18 @@ export function createMissionActors(scene) {
       ];
       const rivalLanes = [0, 1, 3, 2];
       for (let i = 0; i < count; i++) {
-        const pace = 30 + lvl * 20 + (count - i) * 1.8;
-        spawnActor('rival', rivalSpecs[i % rivalSpecs.length], 7 + i * 7, rivalLanes[i % 4], pace, 10);
+        const pace = 27 + lvl * 18 + (count - i) * 1.5;
+        spawnActor('rival', rivalSpecs[i % rivalSpecs.length], 7 + i * 7, rivalLanes[i % 4], pace, 8);
       }
     } else if (mode === 'police_chase') {
-      const pace = 31 + lvl * 18;
-      spawnActor('suspect', { type: 'Sports car', color: 0x1c2026, style: 'Classic muscle' }, 34, 1, pace, 18);
+      const pace = 30 + lvl * 18;
+      spawnActor('suspect', { type: 'Sports car', color: 0x1c2026, style: 'Classic muscle' }, 34, 1, pace, 16);
     } else if (mode === 'flee') {
       const count = mission.policeCount || 1;
       const pLanes = [1, 3];
       for (let i = 0; i < count; i++) {
-        const pace = 44 + lvl * 25 - i * 2;
-        spawnActor('police', { type: 'Sedan', color: 0x1e2631, style: 'Executive saloon' }, -24 - i * 16, pLanes[i % 2], pace, 28);
+        const pace = 34 + lvl * 22 - i * 1.5;
+        spawnActor('police', { type: 'Sedan', color: 0x1e2631, style: 'Executive saloon' }, -42 - i * 18, pLanes[i % 2], pace, 16);
       }
     }
   }
@@ -179,12 +179,12 @@ export function createMissionActors(scene) {
         else if (gap < 15) targetSpeed = Math.min(actor.pace + 5, Math.max(actor.pace, playerSpeed * .93));
       } else if (actor.role === 'police') {
         const behind = playerDistance - actor.station;
-        const sameLane = Math.abs(actor.offset - playerX) < 2.1;
-        if (behind > 65) targetSpeed = Math.max(actor.pace + 10, playerSpeed + 12);
-        else if (behind > 16) targetSpeed = Math.max(actor.pace, playerSpeed + 5.5);
+        const sameLane = Math.abs(actor.offset - playerX) < 2.0;
+        if (behind > 50) targetSpeed = Math.max(actor.pace + 6, playerSpeed + 5);
+        else if (behind > 24) targetSpeed = Math.max(actor.pace + 2.5, playerSpeed * 0.96);
         else if (sameLane && behind < 5.6) targetSpeed = Math.max(0, playerSpeed - 2);
         else if (behind < 1.5) targetSpeed = Math.max(0, playerSpeed - 1.5);
-        else targetSpeed = Math.max(actor.pace * .9, playerSpeed + 2.5);
+        else targetSpeed = actor.pace;
       }
 
       if (gapAhead < 14) targetSpeed = Math.min(targetSpeed, 16);
@@ -235,7 +235,7 @@ export function createMissionActors(scene) {
       if (a.role !== 'police') continue;
       const dist = Math.hypot(playerDistance - a.station, playerX - a.offset);
       if (dist < closest) closest = dist;
-      if (Math.abs(playerDistance - a.station) < 7.5 && Math.abs(playerX - a.offset) < 3.0) pinning = true;
+      if (Math.abs(playerDistance - a.station) < 6.5 && Math.abs(playerX - a.offset) < 2.25) pinning = true;
     }
     return { closest, pinning };
   }
