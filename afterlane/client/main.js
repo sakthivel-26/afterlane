@@ -23,6 +23,7 @@ import { readSoloRun } from './solo-run.js';
 import { buildMissionMap, missions } from './missions.js';
 import { animateLightbar, createLightbar, createMissionActors } from './mission-actors.js';
 import { advanceFlight, createFlight, createLiftJets, flightRollAngle, startFlightRoll, toggleFlight, trafficClearance } from './flight.js';
+import { createDebugOverlay, debugToggles } from './debug.js';
 
 const viewport = document.querySelector('#viewport');
 const intro = document.querySelector('#intro');
@@ -61,7 +62,11 @@ let renderer;
 try {
   setLoading(12, 'Initializing graphics engine…');
   await hydrateMobileStorage();
-  renderer = new T.WebGLRenderer({ antialias: !isAndroidApp, powerPreference: 'high-performance' });
+  renderer = new T.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
+  renderer.info.autoReset = false;
+  renderer.shadowMap.enabled = false;
+  renderer.shadowMap.type = T.PCFShadowMap;
+  renderer.shadowMap.autoUpdate = false;
   const initialIndex = initialVehicleIndex();
   let loadedSteps = 0;
   const stepLoad = (label, promise) => promise.then(result => {
@@ -121,7 +126,18 @@ function run(renderer, plants, driverHand, junctionAsset, initialIndex = 0, init
   scene.add(moon);
   const key = new T.DirectionalLight(0xfff1cc, .40);
   key.position.set(-14,24,-18);
+  key.castShadow = true;
+  key.shadow.mapSize.set(512, 512);
+  key.shadow.camera.left = -18;
+  key.shadow.camera.right = 18;
+  key.shadow.camera.top = 34;
+  key.shadow.camera.bottom = -14;
+  key.shadow.camera.near = 4;
+  key.shadow.camera.far = 72;
+  key.shadow.bias = -0.0006;
+  key.shadow.normalBias = 0.025;
   scene.add(key);
+  scene.add(key.target);
   const updateSky = buildSky(scene);
   const updateRoad = buildRoad(scene,plants,junctionAsset);
   const animateBirds = countryBirds(scene);
@@ -136,7 +152,7 @@ function run(renderer, plants, driverHand, junctionAsset, initialIndex = 0, init
   car.exterior.add(playerLightbar);
   const suspension = buildSuspension();
   const audio = drivingAudio();
-  const camera = new T.PerspectiveCamera(68, 1, .035, isAndroidApp ? 350 : 500);
+  const camera = new T.PerspectiveCamera(68, 1, .035, isMobileDevice ? 300 : 380);
   const compiledTemplates = new WeakSet();
   const prepareTrafficShader = async template => {
     if (compiledTemplates.has(template)) return;
@@ -152,13 +168,27 @@ function run(renderer, plants, driverHand, junctionAsset, initialIndex = 0, init
   const traffic = buildTraffic(scene, prepareTrafficShader);
   const rain = buildRain(rig);
   const snow = buildSnow(rig);
-  const customCars = vehicles.map(spec => spec && vehicleBody(car.exterior,spec.type,spec.color,spec.style));
+  function tagPlayerShadows(object) {
+    object?.traverse(node => {
+      if (node.isMesh && node.name !== 'Contact shade') {
+        node.castShadow = !node.material?.transparent;
+        node.receiveShadow = !node.material?.transparent;
+      }
+    });
+  }
+  const customCars = vehicles.map(spec => {
+    if (!spec) return null;
+    const built = vehicleBody(car.exterior,spec.type,spec.color,spec.style);
+    tagPlayerShadows(built.body);
+    return built;
+  });
   const playerSizes = vehicles.map(spec => spec && dimensions(spec.type,spec.style));
   const exteriorModels = [...customCars];
   const requestedModels = new Set();
   function attachVehicleAsset(index, asset) {
     if (!asset) return;
     const model = asset.clone(true);
+    tagPlayerShadows(model);
     customCars[index].body.visible = false;
     const sprung = model.getObjectByName('Sprung exterior') ?? model;
     exteriorModels[index] = {body:model,sprung,animateWheels:wheelAnimator(model),footprint:model.userData.footprint};
@@ -198,6 +228,36 @@ function run(renderer, plants, driverHand, junctionAsset, initialIndex = 0, init
     lamps.add(beam, beam.target);
     beams.push(beam);
   }
+
+  // Additive glow sprites on player headlights & taillights for High tier (no composer overhead).
+  const glowCanvas = document.createElement('canvas');
+  glowCanvas.width = glowCanvas.height = 64;
+  const gctx = glowCanvas.getContext('2d');
+  const ggrad = gctx.createRadialGradient(32, 32, 2, 32, 32, 30);
+  ggrad.addColorStop(0, 'rgba(255,255,255,1)');
+  ggrad.addColorStop(0.35, 'rgba(255,255,255,0.55)');
+  ggrad.addColorStop(1, 'rgba(255,255,255,0)');
+  gctx.fillStyle = ggrad;
+  gctx.fillRect(0, 0, 64, 64);
+  const playerGlowTex = new T.CanvasTexture(glowCanvas);
+  const headGlowMat = new T.SpriteMaterial({ map: playerGlowTex, color: 0xffe4bc, transparent: true, blending: T.AdditiveBlending, depthWrite: false, toneMapped: false, opacity: .75 });
+  const tailPlayerGlowMat = new T.SpriteMaterial({ map: playerGlowTex, color: 0xff283e, transparent: true, blending: T.AdditiveBlending, depthWrite: false, toneMapped: false, opacity: .78 });
+  const playerGlowGroup = group(car.exterior);
+  const playerHeadGlows = [-1, 1].map(side => {
+    const sp = new T.Sprite(headGlowMat);
+    sp.position.set(side * .67, .64, -2.08);
+    sp.scale.set(1.05, .75, 1);
+    playerGlowGroup.add(sp);
+    return sp;
+  });
+  const playerTailGlows = [-1, 1].map(side => {
+    const sp = new T.Sprite(tailPlayerGlowMat);
+    sp.position.set(side * .67, .68, 2.08);
+    sp.scale.set(.95, .68, 1);
+    playerGlowGroup.add(sp);
+    return sp;
+  });
+  playerGlowGroup.visible = false;
 
   const effects = drivingEffects(renderer,scene,camera);
   const modes = ['Cabin', 'Hood', 'Chase'];
@@ -874,12 +934,41 @@ function run(renderer, plants, driverHand, junctionAsset, initialIndex = 0, init
   const aim = new T.Vector3();
   const mirrorOffset = new T.Vector3();
   const rearView = new T.PerspectiveCamera(47,2,.16,200);
+  const TIER_MAX_DPR = { Low: 1.0, Medium: 1.35, High: 1.75, Ultra: 2.0 };
+  const SHADOW_SIZES = { Low: 0, Medium: 512, High: 1024, Ultra: 2048 };
+  const MIRROR_INTERVALS = { Low: 4, Medium: 3, High: 2, Ultra: 1 };
+  const WEATHER_WET = { Clear: 0, 'Light rain': .42, 'Heavy rain': .78, Thunderstorm: 1, Snow: 0 };
+  const BEAM_INTENSITY = [0, 740, 1520];
+  let currentDpr = 1, maxTierDpr = 1.75, activeShadowSize = 0;
+  let lastRenderAt = 0, emaFrameMs = 16.67, emaWorkMs = 10, dprCooldownUntil = 0, fastStableSince = 0;
+
+  function applyDpr(nextDpr) {
+    const clamped = Math.round(T.MathUtils.clamp(nextDpr, 1.0, maxTierDpr) * 100) / 100;
+    if (Math.abs(clamped - currentDpr) < .01) return;
+    currentDpr = clamped;
+    renderer.setPixelRatio(currentDpr);
+    resize();
+  }
+
   let frame = 0, mirrorIndex = 0, quality = '', neighborhoodLight = .88;
+  const debugHud = createDebugOverlay({
+    renderer,
+    scene,
+    camera,
+    getQuality:() => quality || settings.quality,
+    setQuality:tier => { settings.quality = tier; },
+    setWeather:weather => { settings.weather = weather; },
+    setDistance:value => { distance = Math.max(0, Number(value) || 0); },
+  });
   const previous = {distance:0,x:0,speed:0};
   const stepScene = now => {
-    const frameSeconds = (now-(lastTime||now))/1000;
-    const clockDelta = Math.min(frameSeconds,.25);
-    const dt = Math.min(frameSeconds,.05);
+    if (lastRenderAt && now - lastRenderAt < 13.8) return;
+    const workStart = performance.now();
+    const frameMs = lastRenderAt ? Math.max(1, now - lastRenderAt) : 16.67;
+    lastRenderAt = now;
+    const frameSeconds = Math.max(0, frameMs / 1000);
+    const clockDelta = Math.min(frameSeconds, .25);
+    const dt = Math.min(frameSeconds, .05);
     lastTime = now;
     const selected = rooms.active ? rooms.vehicle : settings.selected;
     const vehicle = vehicles[selected];
@@ -887,9 +976,28 @@ function run(renderer, plants, driverHand, junctionAsset, initialIndex = 0, init
     const size = playerSizes[selected];
     if (quality !== settings.quality) {
       quality = settings.quality;
-      const caps = isMobileDevice ? { Low: 1.0, Medium: 1.35, High: 1.75, Ultra: 2.0 } : { Low: 1.0, Medium: 1.65, High: 2.35, Ultra: 3.0 };
-      renderer.setPixelRatio(Math.min(devicePixelRatio || 1, caps[quality] || caps.High));
+      const tierCap = TIER_MAX_DPR[quality] || 1.75;
+      maxTierDpr = Math.max(1.0, Math.min(devicePixelRatio || 1, tierCap));
+      currentDpr = maxTierDpr;
+      renderer.setPixelRatio(currentDpr);
+      updateRoad.setQuality?.(quality);
+      const nextShadowSize = SHADOW_SIZES[quality] ?? 0;
+      if (nextShadowSize !== activeShadowSize) {
+        if (key.shadow.map) {
+          key.shadow.map.dispose();
+          key.shadow.map = null;
+        }
+        activeShadowSize = nextShadowSize;
+        if (activeShadowSize > 0) {
+          key.shadow.mapSize.set(activeShadowSize, activeShadowSize);
+        }
+      }
+      if (quality !== 'Ultra') effects.dispose?.();
       resize();
+      emaFrameMs = 16.67;
+      emaWorkMs = 10;
+      fastStableSince = 0;
+      dprCooldownUntil = now + 1500;
     }
     const progress = rooms.active ? rooms.route : routeProgress;
     const district = districtAt(distance,progress);
@@ -901,7 +1009,7 @@ function run(renderer, plants, driverHand, junctionAsset, initialIndex = 0, init
     const snowy = district.kind==='ice' || climate.weather==='Snow';
     const weather = snowy ? 'Snow' : district.kind==='desert' ? 'Clear' : climate.weather;
     const {daylight} = climate;
-    const wet = {'Clear':0,'Light rain':.42,'Heavy rain':.78,'Thunderstorm':1,'Snow':0}[weather];
+    const wet = WEATHER_WET[weather] ?? 0;
     if (snowy || district.kind === 'desert') {
       roadWetHold = 0;
       roadWetPeak = 0;
@@ -1036,7 +1144,7 @@ function run(renderer, plants, driverHand, junctionAsset, initialIndex = 0, init
       distance = T.MathUtils.lerp(previous.distance,distance,contact);
       x = T.MathUtils.lerp(previous.x,x,contact);
       crash();
-    });
+    }, quality, daylight);
     if (playing && !rooms.active && !activeMission && health < 100) {
       health = Math.min(100, health + dt * 5);
       updateDurability();
@@ -1075,7 +1183,7 @@ function run(renderer, plants, driverHand, junctionAsset, initialIndex = 0, init
       animateLightbar(playerLightbar, now);
     }
     for (const object of car.exterior.children) {
-      object.visible=object===model.body || (object===liftJets && (flight.active || flight.height>.15)) || (object===playerLightbar && playerLightbar.visible);
+      object.visible=object===model.body || (object===liftJets && (flight.active || flight.height>.15)) || (object===playerLightbar && playerLightbar.visible) || (object===playerGlowGroup && playerGlowGroup.visible);
     }
     const tall = vehicle.type === 'SUV' ? .34 : vehicle.type === 'Sports car' ? -.10 : 0;
     car.cabin.position.y = tall;
@@ -1125,7 +1233,7 @@ function run(renderer, plants, driverHand, junctionAsset, initialIndex = 0, init
       );
       camera.lookAt(aim);
     }
-    rain.update(isAndroidApp && quality === 'Low' ? 0 : wet,Math.abs(speed),dt,1.8+tall);
+    rain.update(debugToggles.rain ? wet : 0,Math.abs(speed),dt,1.8+tall,quality);
     snow(isAndroidApp && quality === 'Low' ? false : snowy,speed,dt,now,1.8+tall);
     if (wet > 0 && playing && settings.wipers !== 'Off') {
       sweep += dt*(settings.wipers === 'Fast' ? 7.4 : 2.2+wet*3.05+Math.min(Math.abs(speed)*.07,2.2));
@@ -1138,7 +1246,7 @@ function run(renderer, plants, driverHand, junctionAsset, initialIndex = 0, init
     const sunBlend = daylight * (1 - wet * .55);
     updateSky(snowy ? .53 : wet,neighborhoodLight,flash,daylight,rooms.active ? rooms.elapsed : gameTime);
     scene.fog.color.copy(forestFog).lerp(townFog,neighborhoodLight).lerp(snowy ? snowFog : dayFog,daylight*.92);
-    scene.fog.density = Math.max(.0020, .0066+wet*.0034+(snowy ? .0026 : 0)-daylight*.0042);
+    scene.fog.density = Math.max(isMobileDevice ? .0034 : .0024, .0066+wet*.0034+(snowy ? .0026 : 0)-daylight*(isMobileDevice ? .0032 : .0042));
     ambient.color.copy(nightSky).lerp(sunSky, sunBlend);
     ambient.groundColor.copy(nightGround).lerp(sunGround, sunBlend);
     ambient.intensity = .08+neighborhoodLight*.16+daylight*.98;
@@ -1148,8 +1256,20 @@ function run(renderer, plants, driverHand, junctionAsset, initialIndex = 0, init
     moon.intensity = (.12+neighborhoodLight*.10)*(1-wet*.85)*(1-daylight)+flash*4.5;
     renderer.toneMappingExposure = 1 - daylight*.16;
     for (const beam of beams) {
-      beam.intensity = [0,740,1520][headlights]*beamGlare*(1-daylight*.82);
+      beam.intensity = BEAM_INTENSITY[headlights]*beamGlare*(1-daylight*.82);
       beam.target.position.z = headlights === 2 ? -46 : -29;
+    }
+    playerGlowGroup.visible = quality === 'High' && mode !== 0;
+    if (playerGlowGroup.visible) {
+      const halfW = size.width * .34, halfL = size.length * .505, headH = size.height * .42;
+      headGlowMat.opacity = headlights > 0 ? (.55 + headlights * .22) * (1 - daylight * .62) : 0;
+      tailPlayerGlowMat.opacity = .52 + .40 * (1 - daylight);
+      for (let i = 0; i < 2; i++) {
+        const s = i === 0 ? -1 : 1;
+        playerHeadGlows[i].visible = headlights > 0;
+        playerHeadGlows[i].position.set(s * halfW, headH, -halfL);
+        playerTailGlows[i].position.set(s * halfW, headH + .05, halfL);
+      }
     }
     const acceleration = dt > 0 ? (Math.abs(speed)-Math.abs(previous.speed))/dt : 0;
     audio.update(playing,rpm,wet,Math.abs(speed),settings.audio==='Muted',vehicle,engineLoad,acceleration,gear);
@@ -1170,9 +1290,24 @@ function run(renderer, plants, driverHand, junctionAsset, initialIndex = 0, init
       camera.updateProjectionMatrix();
     }
     if (garagePanel.open || renderer.getContext().isContextLost()) return;
-    const mirrorSkip = (isMobileDevice ? { Low: 4, Medium: 3, High: 2, Ultra: 2 } : { Low: 4, Medium: 2, High: 1, Ultra: 1 })[quality] || 1;
-    if (mode === 0 && mirrorSkip > 0 && ++frame % mirrorSkip === 0) {
+    renderer.info.reset();
+    const shadowsActive = activeShadowSize > 0 && debugToggles.shadows;
+    renderer.shadowMap.enabled = shadowsActive;
+    if (shadowsActive) {
+      const texelWorld = 36 / activeShadowSize;
+      const sx = Math.round(rig.position.x / texelWorld) * texelWorld;
+      const sz = Math.round((rig.position.z - 12) / texelWorld) * texelWorld;
+      key.target.position.set(sx, 0, sz);
+      key.position.set(sx - 14, 24, sz - 14);
+      key.target.updateMatrixWorld();
+      if ((frame & 1) === 0) renderer.shadowMap.needsUpdate = true;
+    }
+    const mirrorSkip = MIRROR_INTERVALS[quality] || 1;
+    frame++;
+    const beforeMirrorCalls = renderer.info.render.calls;
+    if (debugToggles.mirrors && mode === 0 && mirrorSkip > 0 && frame % mirrorSkip === 0) {
       car.cabin.visible = false;
+      renderer.shadowMap.enabled = false;
       const mirror = car.mirrors[mirrorIndex++ % car.mirrors.length];
       rearView.position.copy(rig.localToWorld(eye.copy(mirror.position).add(mirrorOffset.set(0,tall,.2))));
       const target = aim.copy(mirror.position).add(mirror.look);
@@ -1182,10 +1317,35 @@ function run(renderer, plants, driverHand, junctionAsset, initialIndex = 0, init
       renderer.render(scene,rearView);
       renderer.setRenderTarget(null);
       car.cabin.visible = true;
+      renderer.shadowMap.enabled = shadowsActive;
     }
-    const useEffects = isMobileDevice ? quality === 'Ultra' : (quality === 'High' || quality === 'Ultra');
-    if (!useEffects) renderer.render(scene,camera);
+    const afterMirrorCalls = renderer.info.render.calls;
+    if (quality !== 'Ultra') renderer.render(scene,camera);
     else effects.render(now,Math.abs(speed),quality,daylight);
+    debugHud.recordPass?.(afterMirrorCalls - beforeMirrorCalls, renderer.info.render.calls - afterMirrorCalls);
+
+    const workMs = performance.now() - workStart;
+    emaFrameMs = emaFrameMs * .9 + Math.min(frameMs, 100) * .1;
+    emaWorkMs = emaWorkMs * .9 + Math.min(workMs, 100) * .1;
+    if (playing && maxTierDpr > 1.0 && now > 1500) {
+      if (emaFrameMs > 20.5 || emaWorkMs > 20.0) {
+        fastStableSince = 0;
+        if (now >= dprCooldownUntil && currentDpr > 1.0) {
+          applyDpr(currentDpr - .1);
+          dprCooldownUntil = now + 2200;
+        }
+      } else if (emaFrameMs < 18.0 && emaWorkMs < 13.8) {
+        if (!fastStableSince) fastStableSince = now;
+        if (now - fastStableSince >= 2000 && now >= dprCooldownUntil && currentDpr < maxTierDpr) {
+          applyDpr(currentDpr + .05);
+          dprCooldownUntil = now + 4000;
+          fastStableSince = 0;
+        }
+      } else {
+        fastStableSince = 0;
+      }
+    }
+    debugHud.record(now, frameMs);
   };
   setLoading(90, 'Preparing driving view…');
   stepScene(performance.now());

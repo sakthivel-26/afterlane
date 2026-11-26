@@ -206,45 +206,77 @@ export function buildOptions(pause, trafficChanged, garageActions) {
 }
 
 export function buildRain(rig) {
-  const count = 1200;
-  const vertices = new Float32Array(count*6);
+  const maxCount = 3000;
+  const bases = new Float32Array(maxCount * 6);
+  const params = new Float32Array(maxCount * 4);
+  for (let i = 0; i < maxCount; i++) {
+    const x = (Math.random() - .5) * 30;
+    const y = Math.random() * 11 + .04;
+    const z = 14 - Math.random() * 54;
+    const fallSpeed = 14 + (i % 8);
+    const bi = i * 6;
+    const pi = i * 4;
+    bases[bi] = x; bases[bi + 1] = y; bases[bi + 2] = z;
+    bases[bi + 3] = x; bases[bi + 4] = y; bases[bi + 5] = z;
+    params[pi] = fallSpeed; params[pi + 1] = 0;
+    params[pi + 2] = fallSpeed; params[pi + 3] = 1;
+  }
   const geometry = new T.BufferGeometry();
-  geometry.setAttribute('position',new T.BufferAttribute(vertices,3).setUsage(T.DynamicDrawUsage));
-  const material = new T.LineBasicMaterial({color:0xdaf0ff,transparent:true,opacity:.68,depthWrite:false,fog:false});
-  const lines = new T.LineSegments(geometry,material);
+  // Position attribute is unused for world placement directly, bind aBase as position for bounds/three compatibility.
+  geometry.setAttribute('position', new T.BufferAttribute(bases, 3));
+  geometry.setAttribute('aParams', new T.BufferAttribute(params, 2));
+  const uniforms = {
+    uPhase: { value: 0 },
+    uScrollZ: { value: 0 },
+    uTrailZ: { value: 0 },
+    uCabinY: { value: 1.8 },
+    uOpacity: { value: .68 },
+  };
+  const material = new T.ShaderMaterial({
+    transparent: true,
+    depthWrite: false,
+    fog: false,
+    uniforms,
+    vertexShader: `
+      attribute vec2 aParams;
+      uniform float uPhase, uScrollZ, uTrailZ, uCabinY;
+      void main() {
+        float x = mod(position.x + uPhase * 0.55 + 15.0, 30.0) - 15.0;
+        float y = mod(position.y - uPhase * aParams.x - 0.04, 11.0) + 0.04;
+        float z = mod(position.z + uScrollZ + 40.0, 54.0) - 40.0;
+        if (abs(x) < 1.36 && z > -1.60 && z < 1.62 && y < uCabinY) {
+          gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+          return;
+        }
+        vec3 p = vec3(x, y, z) + aParams.y * vec3(-0.024, 0.42, -uTrailZ);
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
+      }`,
+    fragmentShader: `
+      uniform float uOpacity;
+      void main() {
+        gl_FragColor = vec4(0.855, 0.941, 1.0, uOpacity);
+      }`,
+  });
+  const lines = new T.LineSegments(geometry, material);
   lines.frustumCulled = false;
+  lines.visible = false;
   rig.add(lines);
-  const drops = Array.from({length:count},()=>new T.Vector3(
-    (Math.random()-.5)*30, Math.random()*11+.04, 14-Math.random()*54
-  ));
+  let phase = 0, scrollZ = 0;
+  const counts = { Low: isAndroidApp ? 0 : 400, Medium: 800, High: 1500, Ultra: 3000 };
   return {
-    update(wet, speed, dt, cabinHeight) {
-      const visible = Math.floor(wet*count);
+    update(wet, speed, dt, cabinHeight, quality = 'High') {
+      const cap = counts[quality] ?? 1500;
+      const visible = Math.floor(wet * cap);
       lines.visible = visible > 0;
       if (!visible) return;
-      material.opacity = .52 + wet * .24;
-      const trailZ = Math.min(speed * .0024, .16);
-      let written = 0;
-      for (let i=0;i<visible;i++) {
-        const drop = drops[i];
-        drop.y -= dt*(14+i%8);
-        drop.z += dt*(5+Math.min(speed, 55)*.65);
-        drop.x += dt*.55;
-        if (drop.y < .04) drop.y += 11;
-        if (drop.z > 14) drop.z -= 54;
-        if (drop.x > 15) drop.x -= 30;
-        // Exclude both ends of each streak from the volume occupied by the car.
-        if (Math.abs(drop.x) < 1.36 && drop.z > -1.60 && drop.z < 1.62 && drop.y < cabinHeight) continue;
-        const at = written++*6;
-        vertices[at] = drop.x;
-        vertices[at+1] = drop.y;
-        vertices[at+2] = drop.z;
-        vertices[at+3] = drop.x-.024;
-        vertices[at+4] = drop.y+.42;
-        vertices[at+5] = drop.z-trailZ;
-      }
-      geometry.setDrawRange(0,written*2);
-      geometry.attributes.position.needsUpdate = true;
+      phase += dt;
+      scrollZ += dt * (5 + Math.min(speed, 55) * .65);
+      uniforms.uPhase.value = phase;
+      uniforms.uScrollZ.value = scrollZ;
+      uniforms.uTrailZ.value = Math.min(speed * .0024, .16);
+      uniforms.uCabinY.value = cabinHeight;
+      uniforms.uOpacity.value = .52 + wet * .24;
+      geometry.setDrawRange(0, visible * 2);
     }
   };
 }

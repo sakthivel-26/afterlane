@@ -24,21 +24,79 @@ export function mesh(parent, geometry, material, x, y, z) {
   part.position.set(x, y, z);
   return part;
 }
+export function configureTexture(texture, maxSize = 1024, maxAniso = 4) {
+  if (!texture || !texture.isTexture) return texture;
+  if (!texture.isDataTexture && !texture.isRenderTargetTexture) {
+    texture.generateMipmaps = true;
+    texture.anisotropy = Math.min(texture.anisotropy || maxAniso, maxAniso);
+    if (typeof document !== 'undefined' && texture.image) {
+      const w = texture.image.width || texture.image.naturalWidth || 0;
+      const h = texture.image.height || texture.image.naturalHeight || 0;
+      if (w > maxSize || h > maxSize) {
+        const scale = maxSize / Math.max(w, h);
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.max(1, Math.round(w * scale));
+        canvas.height = Math.max(1, Math.round(h * scale));
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(texture.image, 0, 0, canvas.width, canvas.height);
+          texture.image = canvas;
+          texture.needsUpdate = true;
+        }
+      }
+    }
+  }
+  return texture;
+}
+
 export const box = (parent, material, x, y, z, w, h, d) =>
   mesh(parent, new T.BoxGeometry(w, h, d), material, x, y, z);
 
-export function batchMeshes(parent) {
+export function batchMeshes(parent, vertexColorBucket = false) {
   const materials = new Map();
   for (const part of [...parent.children]) {
-    if (!part.isMesh || part.material.transparent) continue;
+    if (!part.isMesh || part.material.transparent || part.userData.noBatch) continue;
     part.updateMatrix();
-    if (!materials.has(part.material)) materials.set(part.material, []);
-    materials.get(part.material).push(part.geometry.clone().applyMatrix4(part.matrix));
+    let key = part.material;
+    if (vertexColorBucket && part.material?.isMeshStandardMaterial && !part.material.map) {
+      key = '__vertex__';
+    }
+    if (!materials.has(key)) materials.set(key, { material: key === '__vertex__' ? null : part.material, geoms: [] });
+    let g = part.geometry.index && key === '__vertex__' ? part.geometry.toNonIndexed() : part.geometry.clone();
+    g.applyMatrix4(part.matrix);
+    if (key === '__vertex__') {
+      const col = part.material.color;
+      const count = g.attributes.position.count;
+      const colors = new Float32Array(count * 3);
+      for (let i = 0; i < count; i++) {
+        const o = i * 3;
+        colors[o] = col.r; colors[o + 1] = col.g; colors[o + 2] = col.b;
+      }
+      g.setAttribute('color', new T.BufferAttribute(colors, 3));
+      for (const attr of Object.keys(g.attributes)) {
+        if (!['position', 'normal', 'color'].includes(attr)) g.deleteAttribute(attr);
+      }
+    }
+    materials.get(key).geoms.push(g);
+    if (!part.userData.keepGeom && !part.userData.sharedVehicleGeometry) {
+      part.geometry.dispose();
+    }
     parent.remove(part);
   }
-  for (const [material, geometries] of materials) {
-    mesh(parent,mergeGeometries(geometries),material,0,0,0);
-    geometries.forEach(geometry => geometry.dispose());
+  for (const [key, { material, geoms }] of materials) {
+    const mat = material ?? new T.MeshStandardMaterial({ vertexColors: true, roughness: .78, metalness: .16 });
+    const keepAttrs = Object.keys(geoms[0].attributes).filter(attr =>
+      geoms.every(g => Boolean(g.attributes[attr]))
+    );
+    const normalized = geoms.map(g => {
+      for (const attr of Object.keys(g.attributes)) {
+        if (!keepAttrs.includes(attr)) g.deleteAttribute(attr);
+      }
+      return g;
+    });
+    const merged = mergeGeometries(normalized, false);
+    normalized.forEach(geometry => geometry.dispose());
+    if (merged) mesh(parent, merged, mat, 0, 0, 0);
   }
 }
 
@@ -90,6 +148,7 @@ export function buildCar(rig,driverHand=null) {
   box(cabin, leather, 0, .98, .96, 1.88, 1.05, .14);
   const hood = box(cabin,hoodPaint,0,.955,-1.58,1.75,.092,.96);
   hood.rotation.x = -.055;
+  hood.userData.noBatch = true;
   const hoodStripe = box(hood,surface(0x1266cc,.28),0,.047,0,.16,.003,.957);
   box(cabin, leather, 0, 1.65, .36, 1.69, .10, 1.56);
   box(cabin, padded, 0, 1.60, -.49, 1.66, .067, .29);
@@ -135,6 +194,9 @@ export function buildCar(rig,driverHand=null) {
   pattern.screen.geometry.dispose();
   pattern.screen.geometry = new T.CircleGeometry(.032,24);
   pattern.screen.rotation.x = -Math.PI/2;
+  pattern.screen.userData.noBatch = true;
+  batchMeshes(lever, true);
+  batchMeshes(parkingLever, true);
   const patternCtx = pattern.ctx;
   function drawPattern({columns,slots}) {
     const xFor = x=>20+x*140;
@@ -163,9 +225,12 @@ export function buildCar(rig,driverHand=null) {
     pattern.texture.needsUpdate = true;
   }
   const gaugeFrame = box(cabin, rubber, .46, 1.073, -.789, .55, .21, .105);
+  gaugeFrame.userData.noBatch = true;
   const gauges = display(cabin, .46, 1.067, -.731, .50, .164, 768, 252);
+  gauges.screen.userData.noBatch = true;
   box(cabin, rubber, 0, 1.041, -.78, .40, .217, .092);
   const info = display(cabin, 0, 1.041, -.731, .364, .173, 420, 200);
+  info.screen.userData.noBatch = true;
   for (const x of [-.68, -.42, -.20, .79]) {
     box(cabin, rubber, x, .933, -.749, .17, .057, .012);
     for (let i = 0; i < 4; i++) box(cabin, alloy, x, .914 + i*.012, -.741, .15, .0025, .003);
@@ -174,9 +239,11 @@ export function buildCar(rig,driverHand=null) {
   box(cabin, rubber, 0, 1.46, -.843, .33, .094, .025);
   const mirrors = [];
   function mirror(x,y,z,w,h,look,yaw) {
-    const target = new T.WebGLRenderTarget(512,256);
+    const target = new T.WebGLRenderTarget(256,128);
+    target.texture.generateMipmaps = false;
     const material = new T.MeshBasicMaterial({map:target.texture,toneMapped:false});
     const face = mesh(cabin,new T.PlaneGeometry(w,h),material,x,y,z);
+    face.userData.noBatch = true;
     const uv = face.geometry.attributes.uv;
     for (let i=0;i<uv.count;i++) uv.setX(i,1-uv.getX(i));
     face.rotation.y = yaw;
@@ -214,6 +281,8 @@ export function buildCar(rig,driverHand=null) {
   hub.scale.set(1,.74,.31);
   box(wheel, alloy, 0, 0, .03, .033, .009, .003);
   const emblem = display(wheel,0,0,.034,.061,.023,240,90);
+  emblem.screen.userData.noBatch = true;
+  batchMeshes(wheel, true);
   emblem.ctx.fillStyle = '#272a2e';
   emblem.ctx.fillRect(0,0,240,90);
   emblem.ctx.strokeStyle = '#d5dce2';
@@ -268,6 +337,7 @@ export function buildCar(rig,driverHand=null) {
   const watch = display(leftHand,0,.029,.039,.042,.027,220,100);
   watch.screen.rotation.x = -Math.PI/2-.15;
   const dashClock = display(cabin,.319,1.155,-.729,.118,.045,220,100);
+  dashClock.screen.userData.noBatch = true;
   let previousClock = '';
   const clockFormat = new Intl.DateTimeFormat(undefined,{hour:'2-digit',minute:'2-digit',hourCycle:'h23'});
   function updateClock() {
@@ -287,6 +357,8 @@ export function buildCar(rig,driverHand=null) {
   }
   updateClock();
   const forearms = [mesh(cabin,arms,sleeve,0,0,0),mesh(cabin,arms,sleeve,0,0,0)];
+  forearms[0].userData.noBatch = forearms[1].userData.noBatch = true;
+  batchMeshes(cabin, true);
   const leftWheel = group(wheel,-.135,.092,.042);
   const rightWheel = group(wheel,.135,.092,.042);
   const axis = new T.Vector3(0,1,0);
@@ -441,6 +513,9 @@ export function prepareVehicleModel(scene,vehicle) {
     const materials = Array.isArray(node.material) ? node.material : [node.material];
     for (const mat of materials) {
       if (!mat) continue;
+      for (const slot of ['map','normalMap','roughnessMap','metalnessMap','emissiveMap']) {
+        if (mat[slot]) configureTexture(mat[slot], 1024, 4);
+      }
       if (typeof mat.roughness === 'number') mat.roughness = Math.max(mat.roughness,.14);
       if (typeof mat.metalness === 'number') mat.metalness = Math.min(mat.metalness,.86);
       if (typeof mat.envMapIntensity === 'number') mat.envMapIntensity = Math.min(mat.envMapIntensity,.78);
@@ -459,8 +534,63 @@ export function prepareVehicleModel(scene,vehicle) {
   model.scale.setScalar(scale);
   model.position.set(-center.x*scale,-bounds.min.y*scale,-center.z*scale);
   const rigged = vehicle.asset==='starter-m4' ? rigBmwWheels(model) : rigNamedWheels(model);
+  batchStaticGlbMeshes(rigged);
   rigged.userData.footprint = vehicleFootprint(rigged);
   return rigged;
+}
+
+function batchStaticGlbMeshes(root) {
+  if (typeof document === 'undefined') return; // Keep server collision geometry intact without altering nodes.
+  root.updateMatrixWorld(true);
+  const wheelSet = new Set();
+  root.traverse(obj => {
+    if (obj.userData?.wheelRadius) {
+      obj.traverse(child => wheelSet.add(child));
+    }
+  });
+  const rootInv = root.matrixWorld.clone().invert();
+  const buckets = new Map();
+  const nodesToRemove = [];
+  root.traverse(node => {
+    if (!node.isMesh || wheelSet.has(node) || Array.isArray(node.material)) return;
+    const mat = node.material;
+    if (!mat || mat.transparent) return;
+    if (!node.geometry?.attributes?.position) return;
+    if (!buckets.has(mat)) buckets.set(mat, []);
+    buckets.get(mat).push(node);
+  });
+  const relMatrix = new T.Matrix4();
+  for (const [mat, list] of buckets) {
+    if (list.length < 2) continue;
+    const raw = [];
+    for (const node of list) {
+      relMatrix.multiplyMatrices(rootInv, node.matrixWorld);
+      let g = node.geometry.index ? node.geometry.toNonIndexed() : node.geometry.clone();
+      g.applyMatrix4(relMatrix);
+      raw.push(g);
+    }
+    const commonAttrs = Object.keys(raw[0].attributes).filter(name =>
+      name === 'position' || name === 'normal' || name === 'uv'
+    );
+    const keepAttrs = commonAttrs.filter(attr => raw.every(g => Boolean(g.attributes[attr])));
+    const normalized = raw.map(g => {
+      for (const attr of Object.keys(g.attributes)) {
+        if (!keepAttrs.includes(attr)) g.deleteAttribute(attr);
+      }
+      return g;
+    });
+    const merged = mergeGeometries(normalized, false);
+    for (const g of normalized) g.dispose();
+    if (!merged) continue;
+    for (const node of list) nodesToRemove.push(node);
+    const combined = new T.Mesh(merged, mat);
+    combined.name = list[0].name || 'Batched mesh';
+    combined.userData.sharedVehicleGeometry = true;
+    root.add(combined);
+  }
+  for (const node of nodesToRemove) {
+    node.parent?.remove(node);
+  }
 }
 
 const vehicleAssets = new Map();

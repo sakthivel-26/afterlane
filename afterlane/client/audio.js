@@ -1,3 +1,5 @@
+import { hasAsset } from './model-cache.js';
+
 const harmonics = {
   electric:{wave:[0,1,.09,.025],pitch:1,bass:0,cutoff:1},
   inline:{wave:[0,1,.42,.23,.12,.09,.07],pitch:1,bass:.24,cutoff:.93},
@@ -67,7 +69,9 @@ export function drivingAudio() {
 
   async function readClip(id,layer) {
     try {
-      const response=await fetch('/audio/'+id+'-'+layer+'.wav');
+      const path = '/audio/'+id+'-'+layer+'.wav';
+      if (!await hasAsset(path)) return null;
+      const response=await fetch(path);
       if (!response.ok) return null;
       const data=await context.decodeAudioData(await response.arrayBuffer());
       return data.duration>=.25 ? data : null;

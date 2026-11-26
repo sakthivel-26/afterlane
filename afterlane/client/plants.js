@@ -1,5 +1,6 @@
 import * as T from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { configureTexture } from './car.js';
 import { loadCachedModel } from './model-cache.js';
 
 export function preparePlantKit(scene) {
@@ -27,7 +28,7 @@ export function preparePlantKit(scene) {
       if (!object.isMesh) return;
       const geometry = object.geometry.clone().applyMatrix4(object.matrixWorld);
       geometry.translate(-center.x,-bounds.min.y,-center.z);
-      if (object.material.map) object.material.map.anisotropy = 4;
+      if (object.material.map) configureTexture(object.material.map, 1024, 4);
       parts.push({geometry,material:object.material,winter:winter(object.material)});
     });
     return {name:node.name,height:bounds.max.y-bounds.min.y,parts};

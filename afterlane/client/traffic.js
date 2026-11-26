@@ -21,7 +21,14 @@ const bodySeam = surface(0x171a1c,.7);
 const shadowMaterial = new T.ShaderMaterial({
   transparent:true, depthWrite:false, polygonOffset:true, polygonOffsetFactor:-1,
   uniforms:{opacity:{value:.36}},
-  vertexShader:'varying vec2 p; void main(){p=uv*2.0-1.0;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}',
+  vertexShader:`varying vec2 p; void main(){
+    p = uv * 2.0 - 1.0;
+    vec4 mv = vec4(position, 1.0);
+    #ifdef USE_INSTANCING
+      mv = instanceMatrix * mv;
+    #endif
+    gl_Position = projectionMatrix * modelViewMatrix * mv;
+  }`,
   fragmentShader:'varying vec2 p;uniform float opacity;void main(){float a=pow(1.0-clamp(dot(p,p),0.0,1.0),1.35);gl_FragColor=vec4(0.0,0.0,0.0,opacity*a);}'
 });
 const badges = new Map();
@@ -216,7 +223,8 @@ function wheelGeometry(radius,sports,side) {
   return geometry;
 }
 
-export function vehicleBody(parent, type, color, style = '') {
+export function vehicleBody(parent, type, color, style = '', options = {}) {
+  const { includeShade = true, externalWheels = false } = options;
   const assembly = group(parent);
   assembly.name = style || type;
   const body = group(assembly);
@@ -418,6 +426,7 @@ export function vehicleBody(parent, type, color, style = '') {
       }
     }
   }
+  const wheelSpecs = [];
   for (const side of [-1,1]) {
     const lampY = heavy || pickup || suv ? .87 : .735;
     const lampWidth = style === 'Sportback' || touring ? .245 : .19;
@@ -476,11 +485,16 @@ export function vehicleBody(parent, type, color, style = '') {
     }
     if (touring) box(body,tail,side*width*.38,lampY+.006,length/2+.014,width*.092,.026,.031);
     const front = -length*.31, rear = length*.29;
-    const wheel = wheelGeometry(radius,sports,side);
+    const wheel = externalWheels ? null : wheelGeometry(radius,sports,side);
     for (const z of heavy ? [front,rear,rear+.79] : [front,rear]) {
-      const center = new T.Vector3(side*width*.47,radius,z);
-      const {roller} = wheelPivot(assembly,center,radius,z===front);
-      mesh(roller,wheel,wheelMaterial,0,0,0);
+      const wx = side*width*.47;
+      if (externalWheels) {
+        wheelSpecs.push([wx, radius, z, radius, z===front]);
+      } else {
+        const center = new T.Vector3(wx,radius,z);
+        const {roller} = wheelPivot(assembly,center,radius,z===front);
+        mesh(roller,wheel,wheelMaterial,0,0,0);
+      }
     }
   }
   const labels = {
@@ -489,16 +503,60 @@ export function vehicleBody(parent, type, color, style = '') {
   const badgeHeight = porsche ? .678 : midEngine ? .652 : amg ? .725 : scorpio || crv ? .914 : ford ? .994 : .795;
   if (labels[style]) badge(body,labels[style],0,badgeHeight,rearEdge+(ford ? .051 : .030),.30,.057);
   batchMeshes(body);
-  shadeVehicle(assembly,width,length);
+  if (externalWheels) {
+    const trimParts = [];
+    for (const part of [...body.children]) {
+      if (!part.isMesh || part.material === paint || part.material === tail || part.material === white) continue;
+      if (part.material.isMeshBasicMaterial) continue;
+      let g = part.geometry.index ? part.geometry.toNonIndexed() : part.geometry.clone();
+      const col = part.material.color || new T.Color(0xffffff);
+      const verts = g.attributes.position.count;
+      const arr = new Float32Array(verts * 3);
+      for (let i = 0; i < verts; i++) {
+        const o = i * 3;
+        arr[o] = col.r; arr[o + 1] = col.g; arr[o + 2] = col.b;
+      }
+      g.setAttribute('color', new T.BufferAttribute(arr, 3));
+      for (const a of Object.keys(g.attributes)) if (!['position', 'normal', 'color'].includes(a)) g.deleteAttribute(a);
+      trimParts.push(g);
+      part.geometry.dispose();
+      body.remove(part);
+    }
+    if (trimParts.length) {
+      const mergedTrim = mergeGeometries(trimParts, false);
+      for (const g of trimParts) g.dispose();
+      if (mergedTrim) mesh(body, mergedTrim, sharedTrafficTrimMat, 0, 0, 0);
+    }
+  }
+  body.traverse(node => {
+    if (node.isMesh) {
+      node.castShadow = true;
+      node.receiveShadow = true;
+    }
+  });
+  if (includeShade) shadeVehicle(assembly,width,length);
   assembly.userData.paint = paint;
   assembly.userData.tailLight = tail;
   const footprintKey = `${type}/${style}`;
   if (!proceduralFootprints.has(footprintKey)) proceduralFootprints.set(footprintKey,vehicleFootprint(assembly));
-  return {body:assembly,sprung:body,animateWheels:wheelAnimator(assembly),width,length,
-    footprint:proceduralFootprints.get(footprintKey)};
+  let wheelPhase = 0;
+  let wheelSteer = 0;
+  const animateWheels = externalWheels
+    ? (travel, steering = 0) => {
+        if (wheelSpecs.length) wheelPhase = (wheelPhase - travel / wheelSpecs[0][3]) % (Math.PI * 2);
+        wheelSteer = -.49 * T.MathUtils.clamp(steering, -1, 1);
+      }
+    : wheelAnimator(assembly);
+  return {
+    body:assembly,sprung:body,animateWheels,wheelSpecs,
+    getWheelPose: () => ({ phase: wheelPhase, steer: wheelSteer }),
+    width,length,footprint:proceduralFootprints.get(footprintKey)
+  };
 }
 
-function buildTailGlowTexture() {
+const sharedTrafficTrimMat = new T.MeshStandardMaterial({ vertexColors: true, roughness: .38, metalness: .32 });
+
+function buildGlowTexture() {
   const size = 64;
   const pixels = new Uint8Array(size * size * 4);
   for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
@@ -507,9 +565,7 @@ function buildTailGlowTexture() {
     const r = Math.hypot(dx * 0.85, dy * 1.15);
     const a = Math.exp(-r * r * 5.2) * Math.max(0, 1 - r);
     const i = (y * size + x) * 4;
-    pixels[i] = 255;
-    pixels[i + 1] = 48;
-    pixels[i + 2] = 68;
+    pixels[i] = pixels[i + 1] = pixels[i + 2] = 255;
     pixels[i + 3] = Math.round(255 * a);
   }
   const texture = new T.DataTexture(pixels, size, size, T.RGBAFormat);
@@ -518,13 +574,24 @@ function buildTailGlowTexture() {
   return texture;
 }
 
+const glowTexture = buildGlowTexture();
 const tailGlowMaterial = new T.MeshBasicMaterial({
-  map: buildTailGlowTexture(),
+  map: glowTexture,
+  color: 0xff3044,
   transparent: true,
   depthWrite: false,
   blending: T.AdditiveBlending,
   toneMapped: false,
   opacity: .85,
+});
+const instancedGlowMaterial = new T.MeshBasicMaterial({
+  map: glowTexture,
+  color: 0xffffff,
+  transparent: true,
+  depthWrite: false,
+  blending: T.AdditiveBlending,
+  toneMapped: false,
+  opacity: 1,
 });
 const retroReflectorMaterial = new T.MeshPhysicalMaterial({
   color: 0xe82c3a,
@@ -543,40 +610,76 @@ const rearChromeTrimMaterial = new T.MeshPhysicalMaterial({
 });
 const tailGlowGeometry = new T.PlaneGeometry(1, 1);
 
-export function trafficVehicle(parent,type,color,style,asset,prepareShader=null) {
-  const car = vehicleBody(parent,type,color,style);
+function mergeBoxes(specs) {
+  const parts = specs.map(([w, h, d, x, y, z]) => {
+    const g = new T.BoxGeometry(w, h, d);
+    g.translate(x, y, z);
+    return g;
+  });
+  const merged = mergeGeometries(parts, false);
+  for (const g of parts) g.dispose();
+  return merged;
+}
+
+export function trafficVehicle(parent,type,color,style,asset,prepareShader=null,options={}) {
+  const { externalGlow = false, externalShade = false, externalWheels = false } = options;
+  const car = vehicleBody(parent,type,color,style,{ includeShade: !externalShade, externalWheels });
   applyTrafficHeadlightReflection(car.body,car.body.userData.paint);
   const fallbackFootprint = car.footprint;
   const fallback = car.body.children.filter(part=>part.name!=='Contact shade');
   const {height} = dimensions(type,style);
   const heavy = type === 'Heavy truck' || type === 'Bus';
   const tailY = heavy ? height * .34 : T.MathUtils.clamp(height * .48, .56, .98);
+  const headY = heavy ? height * .36 : T.MathUtils.clamp(height * .46, .52, .92);
   const tailZ = car.length * .506;
+  const headZ = -car.length * .506;
   const reflectorY = Math.max(.36, tailY - (heavy ? .14 : .16));
   const lampW = Math.max(.20, car.width * .19);
+  const tailX = car.width * .34;
+  car.haloSpec = { width: car.width, tailY, tailZ, headY, headZ, heavy };
+
   const trimStrip = box(car.body, rearChromeTrimMaterial, 0, Math.max(.42, reflectorY + .06), tailZ, car.width * .46, .024, .018);
   trimStrip.userData.sharedVehicleGeometry = true;
-  for (const side of [-1, 1]) {
-    const tailX = side * car.width * .34;
-    const lamp = box(car.body, car.body.userData.tailLight, tailX, tailY, tailZ, lampW, heavy ? .115 : .072, .038);
-    lamp.userData.sharedVehicleGeometry = true;
-    const reflector = box(car.body, retroReflectorMaterial, tailX, reflectorY, tailZ + .002, lampW * .92, .044, .024);
-    reflector.userData.sharedVehicleGeometry = true;
-    const halo = mesh(car.body, tailGlowGeometry, tailGlowMaterial, tailX, tailY, tailZ + .028);
-    halo.scale.set(car.width * .46, .44, 1);
-    halo.userData.sharedVehicleGeometry = true;
+  if (externalWheels) {
+    // Merge chrome strip into static shared trim mesh cleanly or hide redundant draw at distance.
+    trimStrip.castShadow = false;
+    trimStrip.receiveShadow = false;
   }
-  car.body.userData.tailGlowMaterial = tailGlowMaterial;
-  const indicators = [-1,1].map(side=>[-1,1].map(end=>{
-    const light = mesh(car.body,indicatorGeometry,indicatorLamp,side*car.width*.38,height*.52,end*(car.length*.5+.025));
-    light.visible = false;
-    light.userData.sharedVehicleGeometry = true;
-    return light;
-  }));
-  car.flashSignal = (side,seconds)=>{
-    const blink = seconds%.78<.44;
-    indicators[0].forEach(light=>{light.visible=side===-1&&blink;});
-    indicators[1].forEach(light=>{light.visible=side===1&&blink;});
+
+  const tailGeom = mergeBoxes([
+    [lampW, heavy ? .115 : .072, .038, -tailX, tailY, tailZ],
+    [lampW, heavy ? .115 : .072, .038,  tailX, tailY, tailZ],
+  ]);
+  const lamp = mesh(car.body, tailGeom, car.body.userData.tailLight, 0, 0, 0);
+  lamp.userData.sharedVehicleGeometry = true;
+
+  const reflGeom = mergeBoxes([
+    [lampW * .92, .044, .024, -tailX, reflectorY, tailZ + .002],
+    [lampW * .92, .044, .024,  tailX, reflectorY, tailZ + .002],
+  ]);
+  const reflector = mesh(car.body, reflGeom, retroReflectorMaterial, 0, 0, 0);
+  reflector.userData.sharedVehicleGeometry = true;
+
+  if (!externalGlow) {
+    for (const side of [-1, 1]) {
+      const halo = mesh(car.body, tailGlowGeometry, tailGlowMaterial, side * tailX, tailY, tailZ + .028);
+      halo.scale.set(car.width * .46, .44, 1);
+      halo.userData.sharedVehicleGeometry = true;
+    }
+    car.body.userData.tailGlowMaterial = tailGlowMaterial;
+  }
+
+  const indZ = car.length * .5 + .025;
+  const indX = car.width * .38;
+  const indY = height * .52;
+  const leftInd = mesh(car.body, mergeBoxes([[.16, .056, .035, -indX, indY, -indZ], [.16, .056, .035, -indX, indY, indZ]]), indicatorLamp, 0, 0, 0);
+  const rightInd = mesh(car.body, mergeBoxes([[.16, .056, .035,  indX, indY, -indZ], [.16, .056, .035,  indX, indY, indZ]]), indicatorLamp, 0, 0, 0);
+  leftInd.visible = rightInd.visible = false;
+  leftInd.userData.sharedVehicleGeometry = rightInd.userData.sharedVehicleGeometry = true;
+  car.flashSignal = (side, seconds) => {
+    const blink = seconds % .78 < .44;
+    leftInd.visible = side === -1 && blink;
+    rightInd.visible = side === 1 && blink;
   };
   const rollFallback = car.animateWheels;
   let model, pendingModel, rollModel, requested = false, near = false;
@@ -585,11 +688,20 @@ export function trafficVehicle(parent,type,color,style,asset,prepareShader=null)
     if (!model) return;
     model.visible = near;
     for (const part of fallback) part.visible = !near;
+    car.useExternalWheels = !near && externalWheels;
     car.footprint = near ? model.userData.footprint : fallbackFootprint;
   }
-  car.updateModel = (distance,canAttach=true)=>{
-    const useDetail = distance<(near ? 95 : 80);
-    if (useDetail!==near) {
+  car.useExternalWheels = externalWheels;
+  const lodBands = {
+    Low: [0, 0],
+    Medium: [28, 36],
+    High: [42, 52],
+    Ultra: [64, 78],
+  };
+  car.updateModel = (distance, canAttach = true, quality = 'High') => {
+    const [enterDist, exitDist] = lodBands[quality] || lodBands.High;
+    const useDetail = enterDist > 0 && distance < (near ? exitDist : enterDist);
+    if (useDetail !== near) {
       near = useDetail;
       updateVisibility();
     }
@@ -597,8 +709,12 @@ export function trafficVehicle(parent,type,color,style,asset,prepareShader=null)
       model = pendingModel.clone(true);
       pendingModel = null;
       applyTrafficHeadlightReflection(model);
-      model.traverse(part=>{
-        if (part.isMesh) part.userData.sharedVehicleGeometry = true;
+      model.traverse(part => {
+        if (part.isMesh) {
+          part.userData.sharedVehicleGeometry = true;
+          part.castShadow = !part.material?.transparent;
+          part.receiveShadow = !part.material?.transparent;
+        }
       });
       car.body.add(model);
       rollModel = wheelAnimator(model);
@@ -607,7 +723,7 @@ export function trafficVehicle(parent,type,color,style,asset,prepareShader=null)
     }
     if (!near || requested || !asset) return false;
     requested = true;
-    loadVehicleAsset({asset,type,style}).then(async template=>{
+    loadVehicleAsset({ asset, type, style }).then(async template => {
       if (!template || !car.body.parent) return;
       if (prepareShader) {
         try { await prepareShader(template); } catch {}
@@ -623,18 +739,44 @@ export function trafficVehicle(parent,type,color,style,asset,prepareShader=null)
   return car;
 }
 
-const indicatorGeometry = new T.BoxGeometry(.16,.056,.035);
 const indicatorLamp = new T.MeshBasicMaterial({color:0xffa22c,toneMapped:false});
 const random = (lo, hi) => lo + Math.random() * (hi-lo);
 
 export function buildTraffic(scene, prepareShader=null) {
   const fleet = Array.from({length:Math.max(24,trafficSpecs.length)}, (_,i) => {
     const spec = trafficSpecs[i % trafficSpecs.length];
-    const model = trafficVehicle(scene,...spec,prepareShader);
+    const model = trafficVehicle(scene,...spec,prepareShader,{ externalGlow: true, externalShade: true, externalWheels: true });
     model.body.visible = false;
     model.type = spec[0];
     return model;
   });
+
+  const unitWheelGeom = wheelGeometry(1, false, 1);
+  const wheelInstanced = new T.InstancedMesh(unitWheelGeom, wheelMaterial, fleet.length * 6);
+  wheelInstanced.frustumCulled = false;
+  wheelInstanced.castShadow = true;
+  wheelInstanced.count = 0;
+  scene.add(wheelInstanced);
+  const wheelObj = new T.Object3D();
+
+  const shadePlane = new T.PlaneGeometry(1, 1);
+  shadePlane.rotateX(-Math.PI / 2);
+  const shadeInstanced = new T.InstancedMesh(shadePlane, shadowMaterial, fleet.length);
+  shadeInstanced.frustumCulled = false;
+  shadeInstanced.count = 0;
+  scene.add(shadeInstanced);
+
+  const glowInstanced = new T.InstancedMesh(tailGlowGeometry, instancedGlowMaterial, fleet.length * 4);
+  glowInstanced.frustumCulled = false;
+  glowInstanced.setColorAt(0, new T.Color(0xffffff));
+  glowInstanced.instanceColor.setUsage(T.DynamicDrawUsage);
+  glowInstanced.count = 0;
+  scene.add(glowInstanced);
+
+  const scratchObj = new T.Object3D();
+  const tailTint = new T.Color(0xff283e);
+  const headTint = new T.Color(0xffe4bc);
+  const tmpTint = new T.Color();
 
   function spawn(car, station, lane) {
     car.station = station;
@@ -678,7 +820,7 @@ export function buildTraffic(scene, prepareShader=null) {
     return false;
   }
 
-  function update(dt,distance,offset,count,canScore,playerSpeed,playerFootprint,playerYaw,previous,near,crash) {
+  function update(dt,distance,offset,count,canScore,playerSpeed,playerFootprint,playerYaw,previous,near,crash,quality='High',daylight=0) {
     let firstContact = null, hitCar = null;
     const player = {distance,x:offset};
     let drivers = emptyDrivers;
@@ -756,13 +898,89 @@ export function buildTraffic(scene, prepareShader=null) {
     }
     const roadOrigin = roadX(distance);
     let attachedThisFrame = false;
+    let shadeCount = 0, glowCount = 0, wheelCount = 0;
+    const maxForward = 290;
+    const isHigh = quality === 'High';
+    const tailAlpha = (.52 + .44 * (1 - daylight)) * (isHigh ? 1.15 : .88);
+    const headAlpha = (1.0 - daylight * .62) * .78;
+
     for (const car of active) {
+      const gap = car.station - distance;
+      if (car.body.visible && (gap < -34 || gap > maxForward)) {
+        car.body.visible = false;
+      }
       const position = roadPosition(car.station,car.offset);
-      car.body.position.set(position.x-roadOrigin,0,position.z+distance);
-      car.body.rotation.y = position.heading+trafficTurn(car);
-      if (car.updateModel(Math.abs(car.station-distance),!attachedThisFrame)) attachedThisFrame = true;
+      const bx = position.x-roadOrigin;
+      const bz = position.z+distance;
+      const byaw = position.heading+trafficTurn(car);
+      car.body.position.set(bx,0,bz);
+      car.body.rotation.y = byaw;
+      if (car.updateModel(Math.abs(gap),!attachedThisFrame,quality)) attachedThisFrame = true;
       car.flashSignal(car.signal,car.signalAge);
       car.animateWheels(car.station-car.previousStation,(lanes[car.target]-car.offset)*.19);
+
+      if (car.body.visible) {
+        const cos = Math.cos(byaw), sin = Math.sin(byaw);
+        if (car.useExternalWheels && car.wheelSpecs?.length) {
+          const { phase, steer } = car.getWheelPose();
+          for (let w = 0; w < car.wheelSpecs.length; w++) {
+            const [wx, wy, wz, wr, isFront] = car.wheelSpecs[w];
+            wheelObj.position.set(bx + wx * cos + wz * sin, wy, bz + wz * cos - wx * sin);
+            wheelObj.rotation.set(phase, byaw + (isFront ? steer : 0) + (wx < 0 ? Math.PI : 0), 0, 'YXZ');
+            wheelObj.scale.setScalar(wr);
+            wheelObj.updateMatrix();
+            if (wheelCount < fleet.length * 6) wheelInstanced.setMatrixAt(wheelCount++, wheelObj.matrix);
+          }
+        }
+        scratchObj.position.set(bx, .008, bz);
+        scratchObj.rotation.set(0, byaw, 0);
+        scratchObj.scale.set(car.width * 1.24, 1, car.length * 1.01);
+        scratchObj.updateMatrix();
+        shadeInstanced.setMatrixAt(shadeCount++, scratchObj.matrix);
+
+        const hs = car.haloSpec;
+        if (hs && Math.abs(car.station - distance) < 220) {
+          const tailX = hs.width * .34;
+          const tailScaleW = hs.width * (isHigh ? .54 : .46);
+          const tailScaleH = isHigh ? .52 : .44;
+          tmpTint.copy(tailTint).multiplyScalar(tailAlpha);
+          for (const side of [-1, 1]) {
+            const lx = side * tailX, lz = hs.tailZ + .028;
+            scratchObj.position.set(bx + lx * cos + lz * sin, hs.tailY, bz + lz * cos - lx * sin);
+            scratchObj.rotation.set(0, byaw, 0);
+            scratchObj.scale.set(tailScaleW, tailScaleH, 1);
+            scratchObj.updateMatrix();
+            if (glowCount < fleet.length * 4) {
+              glowInstanced.setMatrixAt(glowCount, scratchObj.matrix);
+              glowInstanced.setColorAt(glowCount++, tmpTint);
+            }
+          }
+          if (isHigh) {
+            tmpTint.copy(headTint).multiplyScalar(headAlpha);
+            for (const side of [-1, 1]) {
+              const lx = side * tailX, lz = hs.headZ - .03;
+              scratchObj.position.set(bx + lx * cos + lz * sin, hs.headY, bz + lz * cos - lx * sin);
+              scratchObj.rotation.set(0, byaw + Math.PI, 0);
+              scratchObj.scale.set(hs.width * .50, .48, 1);
+              scratchObj.updateMatrix();
+              if (glowCount < fleet.length * 4) {
+                glowInstanced.setMatrixAt(glowCount, scratchObj.matrix);
+                glowInstanced.setColorAt(glowCount++, tmpTint);
+              }
+            }
+          }
+        }
+      }
+    }
+    shadeInstanced.count = shadeCount;
+    if (shadeCount) shadeInstanced.instanceMatrix.needsUpdate = true;
+    wheelInstanced.count = wheelCount;
+    wheelInstanced.visible = wheelCount > 0;
+    if (wheelCount) wheelInstanced.instanceMatrix.needsUpdate = true;
+    glowInstanced.count = glowCount;
+    if (glowCount) {
+      glowInstanced.instanceMatrix.needsUpdate = true;
+      glowInstanced.instanceColor.needsUpdate = true;
     }
   }
   async function preload(canWork = () => true) {

@@ -7,6 +7,7 @@ import { trafficSpecs, vehicles } from '../client/vehicle-specs.js';
 
 export async function loadModelAssets() {
   const directory = new URL('../client/models/',import.meta.url);
+  const audioDirectory = new URL('../client/audio/',import.meta.url);
   const specs = new Map([
     ...vehicles.filter(Boolean).map(vehicle=>[vehicle.asset,vehicle]),
     ...trafficSpecs.map(([type,,style,asset])=>[asset,{type,style,asset}]),
@@ -40,5 +41,9 @@ export async function loadModelAssets() {
       }
     }));
   }
+  try {
+    const audioFiles = (await readdir(audioDirectory,{withFileTypes:true})).filter(file=>file.isFile() && file.name.endsWith('.wav'));
+    for (const {name} of audioFiles) versions['/audio/'+name] = name;
+  } catch { /* Optional WAV engine samples directory not present. */ }
   return {versions,footprints};
 }

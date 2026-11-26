@@ -122,9 +122,6 @@ export function trafficLighting(scene,visitTraffic) {
       const ahead = gap>0;
       const glare = cabin && ahead ? 1.05+.35*T.MathUtils.smoothstep(gap,5,30) : 1.15;
       car.body.userData.tailLight?.color.copy(tailColor).multiplyScalar(glare);
-      if (car.body.userData.tailGlowMaterial) {
-        car.body.userData.tailGlowMaterial.opacity = .52 + .44 * (1 - daylight);
-      }
       if (cabin && ahead && Math.abs(car.offset-x)<2.7) {
         beam=Math.min(beam,.80+.20*T.MathUtils.smoothstep(gap,4,21));
       }

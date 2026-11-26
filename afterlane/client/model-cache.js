@@ -15,6 +15,11 @@ function modelVersions() {
   return versionsRequest;
 }
 
+export async function hasAsset(path) {
+  const versions = await modelVersions();
+  return versions ? Boolean(versions[path]) : true;
+}
+
 function database() {
   if (!globalThis.indexedDB) return Promise.resolve(null);
   databaseRequest ??= new Promise(resolve=>{

@@ -1,5 +1,5 @@
 import * as T from 'three';
-import { batchMeshes, box, surface } from './car.js';
+import { batchMeshes, box, configureTexture, surface } from './car.js';
 import { segmentLength } from './route.js';
 
 export function roadSurfaceAt(number,kind) {
@@ -20,7 +20,7 @@ export function roadTextures(asphalt,concrete,verge) {
     loader.load('/surfaces/'+path+'.jpg',texture=>{
       texture.wrapS = texture.wrapT = T.RepeatWrapping;
       texture.repeat.set(...repeat);
-      texture.anisotropy = 4;
+      configureTexture(texture, 1024, 4);
       if (normal) material.normalMap = texture;
       else {
         texture.colorSpace = T.SRGBColorSpace;

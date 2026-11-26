@@ -26,12 +26,19 @@ export function countryBirds(scene) {
       const ahead=z-Math.abs(spread)*2.3;
       const flap=Math.sin(flight*8.7-i*.47)*.55;
       const wing=1.03-.25*Math.abs(flap);
-      points.set([
-        x-.18,y,ahead+.20, x-wing,y+flap,ahead-.16, x-.27,y+.09,ahead-.32,
-        x+.18,y,ahead+.20, x+wing,y+flap,ahead-.16, x+.27,y+.09,ahead-.32,
-        x,y+.16,ahead+.52, x-.20,y-.015,ahead-.17, x+.20,y-.015,ahead-.17,
-        x-.20,y-.015,ahead-.14, x+.20,y-.015,ahead-.14, x,y-.017,ahead-.61
-      ],i*vertices*3);
+      const o=i*vertices*3;
+      points[o]=x-.18;   points[o+1]=y;      points[o+2]=ahead+.20;
+      points[o+3]=x-wing;points[o+4]=y+flap;points[o+5]=ahead-.16;
+      points[o+6]=x-.27; points[o+7]=y+.09; points[o+8]=ahead-.32;
+      points[o+9]=x+.18; points[o+10]=y;     points[o+11]=ahead+.20;
+      points[o+12]=x+wing;points[o+13]=y+flap;points[o+14]=ahead-.16;
+      points[o+15]=x+.27;points[o+16]=y+.09; points[o+17]=ahead-.32;
+      points[o+18]=x;    points[o+19]=y+.16; points[o+20]=ahead+.52;
+      points[o+21]=x-.20;points[o+22]=y-.015;points[o+23]=ahead-.17;
+      points[o+24]=x+.20;points[o+25]=y-.015;points[o+26]=ahead-.17;
+      points[o+27]=x-.20;points[o+28]=y-.015;points[o+29]=ahead-.14;
+      points[o+30]=x+.20;points[o+31]=y-.015;points[o+32]=ahead-.14;
+      points[o+33]=x;    points[o+34]=y-.017;points[o+35]=ahead-.61;
     }
     geometry.attributes.position.needsUpdate=true;
   };
