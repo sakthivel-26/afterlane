@@ -617,8 +617,32 @@ function run(renderer, plants, driverHand, junctionAsset, initialIndex = 0, init
     start.textContent = 'Drive again';
   }
 
+  let screenWakeLock = null;
+  function syncWakeLock(active) {
+    if (!navigator.wakeLock) return;
+    if (active) {
+      if (!screenWakeLock) {
+        void navigator.wakeLock.request('screen').then(lock => {
+          if (!playing) {
+            void lock.release().catch(() => {});
+            return;
+          }
+          screenWakeLock = lock;
+          lock.addEventListener('release', () => { if (screenWakeLock === lock) screenWakeLock = null; }, { once: true });
+        }).catch(() => {});
+      }
+    } else if (screenWakeLock) {
+      void screenWakeLock.release().catch(() => {});
+      screenWakeLock = null;
+    }
+  }
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && playing) syncWakeLock(true);
+  });
+
   function setPlaying(value) {
     playing = value;
+    syncWakeLock(value);
     held.clear();
     for (const [pointer,button] of drivingPointers) {
       button.removeAttribute('data-held');

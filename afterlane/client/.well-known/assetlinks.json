@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.afterlane.racing",
+      "sha256_cert_fingerprints": [
+        "79:A6:0D:97:3B:F2:A9:64:E9:01:ED:1C:1A:70:FB:51:AC:81:E4:6C:07:E2:AD:93:C5:58:65:E4:ED:2D:52:83"
+      ]
+    }
+  }
+]

@@ -9,8 +9,8 @@ import { loadModelAssets } from './model-assets.js';
 
 const client = fileURLToPath(new URL('../client/', import.meta.url));
 const vendor = fileURLToPath(new URL('../node_modules/three/', import.meta.url));
-const types = { html:'text/html', js:'text/javascript', css:'text/css', glb:'model/gltf-binary', wav:'audio/wav', jpg:'image/jpeg', json:'application/json', apk:'application/vnd.android.package-archive' };
-const compressible = new Set(['html','js','css','glb','json']);
+const types = { html:'text/html', js:'text/javascript', css:'text/css', glb:'model/gltf-binary', wav:'audio/wav', jpg:'image/jpeg', png:'image/png', json:'application/json', webmanifest:'application/manifest+json', apk:'application/vnd.android.package-archive' };
+const compressible = new Set(['html','js','css','glb','json','webmanifest']);
 const {versions,footprints} = await loadModelAssets();
 const modelVersions = JSON.stringify(versions);
 const server = createServer(async (req, res) => {

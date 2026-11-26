@@ -2,11 +2,13 @@
 androidGradlePlugin = "9.0.1"
 androidxCore = "1.18.0"
 androidxActivity = "1.13.0"
+androidxBrowser = "1.10.0"
 kotlin = "2.3.20"
 
 [libraries]
 androidx-core-ktx = { module = "androidx.core:core-ktx", version.ref = "androidxCore" }
 androidx-activity-ktx = { module = "androidx.activity:activity-ktx", version.ref = "androidxActivity" }
+androidx-browser = { module = "androidx.browser:browser", version.ref = "androidxBrowser" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "androidGradlePlugin" }
