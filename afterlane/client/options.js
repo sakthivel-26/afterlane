@@ -117,7 +117,7 @@ export function buildOptions(pause, trafficChanged, garageActions) {
     content.append(controls);
     range('Traffic vehicles','traffic',0,24,'',trafficChanged);
     range('Steering sensitivity','steeringSensitivity',65,150,'%',null,5);
-    select('Weather','weather',['Clear Day','Dynamic','Clear Night','Light rain','Heavy rain','Thunderstorm']);
+    select('Weather','weather',['Clear Day','Dynamic','Clear Night','Light rain','Heavy rain','Rainy Night','Thunderstorm']);
     select('Wipers','wipers',['Auto','Fast','Off']);
     select('Cabin light','cabinLight',['On','Off']);
     select('Driver cigarette','cigarette',['Off','On']);
@@ -144,36 +144,38 @@ export function buildRain(rig) {
   const vertices = new Float32Array(count*6);
   const geometry = new T.BufferGeometry();
   geometry.setAttribute('position',new T.BufferAttribute(vertices,3).setUsage(T.DynamicDrawUsage));
-  const material = new T.LineBasicMaterial({color:0xc1daf4,transparent:true,opacity:.4,depthWrite:false,fog:false});
+  const material = new T.LineBasicMaterial({color:0xdaf0ff,transparent:true,opacity:.68,depthWrite:false,fog:false});
   const lines = new T.LineSegments(geometry,material);
   lines.frustumCulled = false;
   rig.add(lines);
   const drops = Array.from({length:count},()=>new T.Vector3(
-    (Math.random()-.5)*35, Math.random()*11+.04, 16-Math.random()*59
+    (Math.random()-.5)*30, Math.random()*11+.04, 14-Math.random()*54
   ));
   return {
     update(wet, speed, dt, cabinHeight) {
       const visible = Math.floor(wet*count);
       lines.visible = visible > 0;
       if (!visible) return;
+      material.opacity = .52 + wet * .24;
+      const trailZ = Math.min(speed * .0024, .16);
       let written = 0;
       for (let i=0;i<visible;i++) {
         const drop = drops[i];
-        drop.y -= dt*(12+i%8);
-        drop.z += dt*(5+speed*.75);
+        drop.y -= dt*(14+i%8);
+        drop.z += dt*(5+Math.min(speed, 55)*.65);
         drop.x += dt*.55;
         if (drop.y < .04) drop.y += 11;
-        if (drop.z > 16) drop.z -= 59;
-        if (drop.x > 17.5) drop.x -= 35;
+        if (drop.z > 14) drop.z -= 54;
+        if (drop.x > 15) drop.x -= 30;
         // Exclude both ends of each streak from the volume occupied by the car.
         if (Math.abs(drop.x) < 1.36 && drop.z > -1.60 && drop.z < 1.62 && drop.y < cabinHeight) continue;
         const at = written++*6;
         vertices[at] = drop.x;
         vertices[at+1] = drop.y;
         vertices[at+2] = drop.z;
-        vertices[at+3] = drop.x-.018;
-        vertices[at+4] = drop.y+.24;
-        vertices[at+5] = drop.z-speed*.004;
+        vertices[at+3] = drop.x-.024;
+        vertices[at+4] = drop.y+.42;
+        vertices[at+5] = drop.z-trailZ;
       }
       geometry.setDrawRange(0,written*2);
       geometry.attributes.position.needsUpdate = true;

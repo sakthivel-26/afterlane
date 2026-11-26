@@ -66,6 +66,10 @@ export function weatherAt(seconds,setting='Clear Day') {
   if (setting!=='Dynamic') {
     if (setting==='Clear Day' || setting==='Clear') return {weather:'Clear',daylight:1};
     if (setting==='Clear Night') return {weather:'Clear',daylight:0};
+    if (setting==='Rainy Night') return {weather:'Heavy rain',daylight:0};
+    if (setting==='Light rain') return {weather:'Light rain',daylight:.48};
+    if (setting==='Heavy rain') return {weather:'Heavy rain',daylight:.26};
+    if (setting==='Thunderstorm') return {weather:'Thunderstorm',daylight:.14};
     return {weather:setting,daylight:1};
   }
   const time = (seconds+145)%360;

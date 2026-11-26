@@ -107,11 +107,11 @@ function run(renderer, plants, driverHand, junctionAsset, initialIndex = 0, init
   scene.environmentIntensity = .42;
   studioEnv.dispose();
   pmrem.dispose();
-  const forestFog = new T.Color(0x080d16), townFog = new T.Color(0x182330);
+  const forestFog = new T.Color(0x05080f), townFog = new T.Color(0x0b121b);
   const dayFog = new T.Color(0xc2dcf2), snowFog = new T.Color(0xb1bfcd);
-  const nightSky = new T.Color(0xc6d7fc), sunSky = new T.Color(0xdcf0ff);
-  const nightGround = new T.Color(0x79624b), sunGround = new T.Color(0xc6a982);
-  const nightKeyColor = new T.Color(0xe8ba8b), sunColor = new T.Color(0xfff1cc);
+  const nightSky = new T.Color(0x283a5c), sunSky = new T.Color(0xdcf0ff);
+  const nightGround = new T.Color(0x161418), sunGround = new T.Color(0xc6a982);
+  const nightKeyColor = new T.Color(0x6379a3), sunColor = new T.Color(0xfff1cc);
   scene.fog = new T.FogExp2(dayFog, .004);
   const ambient = new T.HemisphereLight(0xc6d7fc, 0x79624b, .9);
   scene.add(ambient);
@@ -830,7 +830,8 @@ function run(renderer, plants, driverHand, junctionAsset, initialIndex = 0, init
     const progress = rooms.active ? rooms.route : routeProgress;
     const district = districtAt(distance,progress);
     const missionActive = activeMission?.status === 'active' && !rooms.active;
-    const climate = missionActive
+    const customWeather = settings.weather !== 'Clear Day' && settings.weather !== 'Dynamic';
+    const climate = missionActive && !customWeather
       ? { weather: activeMission.spec.weather, daylight: activeMission.spec.daylight }
       : weatherAt(rooms.active ? rooms.elapsed : gameTime,rooms.active ? 'Dynamic' : settings.weather);
     const snowy = district.kind==='ice' || climate.weather==='Snow';
@@ -1076,11 +1077,11 @@ function run(renderer, plants, driverHand, junctionAsset, initialIndex = 0, init
     scene.fog.density = Math.max(.0020, .0066+wet*.0034+(snowy ? .0026 : 0)-daylight*.0042);
     ambient.color.copy(nightSky).lerp(sunSky, sunBlend);
     ambient.groundColor.copy(nightGround).lerp(sunGround, sunBlend);
-    ambient.intensity = .22+neighborhoodLight*.46+daylight*.56;
-    scene.environmentIntensity = .14+neighborhoodLight*.08+daylight*.18;
+    ambient.intensity = .08+neighborhoodLight*.16+daylight*.98;
+    scene.environmentIntensity = .04+neighborhoodLight*.04+daylight*.31;
     key.color.copy(nightKeyColor).lerp(sunColor, sunBlend);
-    key.intensity = .12+neighborhoodLight*.28+daylight*(1.48-wet*.65);
-    moon.intensity = (.19+neighborhoodLight*.33)*(1-wet*.85)*(1-daylight)+flash*4.5;
+    key.intensity = .02+neighborhoodLight*.06+daylight*(1.76-wet*.75);
+    moon.intensity = (.12+neighborhoodLight*.10)*(1-wet*.85)*(1-daylight)+flash*4.5;
     renderer.toneMappingExposure = 1 - daylight*.16;
     for (const beam of beams) {
       beam.intensity = [0,620,1330][headlights]*beamGlare*(1-daylight*.86);
