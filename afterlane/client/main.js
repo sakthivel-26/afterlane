@@ -49,9 +49,12 @@ function setLoading(percent, message) {
 function initialVehicleIndex() {
   try {
     const saved = JSON.parse(localStorage.getItem('afterlane-profile-v2'));
-    if (Number.isInteger(saved?.selected) && vehicles[saved.selected]) return saved.selected;
+    const unlockedM4 = Boolean(saved?.missionCompleted?.[5]);
+    if (Number.isInteger(saved?.selected) && vehicles[saved.selected] && (saved.selected !== 0 || unlockedM4 || saved.bmwM4Bought)) {
+      return saved.selected;
+    }
   } catch { /* Use default starter car. */ }
-  return 0;
+  return 11; // Classic Mini
 }
 
 let renderer;
@@ -462,10 +465,18 @@ function run(renderer, plants, driverHand, junctionAsset, initialIndex = 0, init
     if (!prev || remaining > prev.bestRemaining) {
       settings.missionCompleted[spec.id] = { bestRemaining: +remaining.toFixed(1) };
     }
+    let unlockedCar = '';
+    if (spec.id === 5 && !settings.owned.includes(0)) {
+      settings.owned.push(0);
+      unlockedCar = 'BMW M4 Competition';
+    }
     options.save();
     setPlaying(false);
     intro.querySelector('h1').textContent = `Mission ${spec.id} complete!`;
-    intro.querySelector('.sub').textContent = `${spec.title} · +${spec.reward} pts earned · ${remaining.toFixed(1)}s left`;
+    intro.querySelector('.sub').textContent = unlockedCar
+      ? `${spec.title} · +${spec.reward} pts · 🎁 Unlocked ${unlockedCar} FREE in Garage!`
+      : `${spec.title} · +${spec.reward} pts earned · ${remaining.toFixed(1)}s left`;
+    if (unlockedCar) showToast(`FREE CAR UNLOCKED: ${unlockedCar}!`, 2600);
     start.textContent = 'Free Play';
     if (missionResultActions) {
       missionResultActions.hidden = false;
@@ -903,9 +914,9 @@ function run(renderer, plants, driverHand, junctionAsset, initialIndex = 0, init
     const trafficContactPossible = Math.min(previousHeight,flight.height)<trafficClearance && now >= impactGraceUntil;
     traffic.update(playing ? dt : 0,distance,x,rooms.active ? 0 : settings.traffic,playing && trafficContactPossible,speed,model.footprint,yaw,previous,() => {
       if (flight.height<.1) {
-        award(10);
+        award(5);
         if (activeMission?.status === 'active') activeMission.closeOvertakes++;
-        showToast('+10 CLOSE PASS!', 950);
+        showToast('+5 NEAR PASS!', 950);
       }
     }, (contact, hitCar) => {
       if (activeMission?.status === 'active') {
@@ -1155,7 +1166,7 @@ function run(renderer, plants, driverHand, junctionAsset, initialIndex = 0, init
     };
   };
   setTimeout(()=>{
-    const idle = () => !playing;
+    const idle = () => !playing && !garagePanel.open && !options.editingControls;
     updateRoad.prewarmRemaining?.(idle);
     traffic.preload(idle);
   },400);

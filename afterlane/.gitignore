@@ -7,16 +7,3 @@ node_modules/
 *.pfx
 *.p12
 *.log
-
-# Optional local models with restricted or unverified release terms.
-/client/models/challenger-rt-1970.glb
-/client/models/driver-hand.glb
-/client/models/ice-cream-truck.glb
-/client/models/jaguar-xjr9.glb
-/client/models/lamborghini-centenario.glb
-/client/models/g63.glb
-/client/models/t-rdstr.glb
-/client/models/road-junction.glb
-/client/models/rsr.glb
-/client/models/suv.glb
-/client/models/volkswagen-bus.glb

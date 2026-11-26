@@ -76,7 +76,7 @@
 </div>
 <p class="route"><span></span> ROUTE 07 <b> / </b> NORTHBOUND</p>
 <h1>The night<br>is yours<span>.</span></h1>
-<p class="sub">Drive a winding highway in live traffic. Earn 1 point every 15 m and 10 for each close overtake.</p>
+<p class="sub">Drive a winding highway in live traffic. Earn 1 point every 15 m and 5 for each tight near pass.</p>
 <div class="intro-actions">
   <button id="play-missions" type="button" disabled>Play with Mission</button>
   <button id="start" type="button" disabled>Loading route…</button>
@@ -118,7 +118,9 @@
   </div>
 </section>
 <div id="touch-drive" hidden aria-label="Touch driving controls">
-  <div class="touch-steering">
+  <div class="touch-steering" data-zone="steer">
+    <span class="zone-badge" aria-hidden="true">Steering</span>
+    <button type="button" class="zone-resize" aria-label="Drag corner to resize steering">⤡</button>
     <div id="touch-arrows" role="group" aria-label="Steering arrows" hidden>
       <button type="button" data-drive="ArrowLeft" aria-label="Steer left">‹</button>
       <button type="button" data-drive="ArrowRight" aria-label="Steer right">›</button>
@@ -131,7 +133,9 @@
     </div>
   </div>
   <div class="touch-actions" role="group" aria-label="Driving actions">
-    <div class="touch-utility">
+    <div class="touch-utility" data-zone="shifter">
+      <span class="zone-badge" aria-hidden="true">Shifter</span>
+      <button type="button" class="zone-resize" aria-label="Drag corner to resize shifter">⤡</button>
       <div id="touch-transmission" class="touch-transmission">
         <button id="touch-gear" type="button" aria-label="Automatic transmission. Switch to manual."><span id="touch-gear-value">D1</span><small id="touch-gear-mode">Auto</small></button>
         <div id="touch-gate" role="group" aria-label="H-pattern shifter">
@@ -145,10 +149,22 @@
         <button type="button" data-drive="Space" aria-pressed="false">Handbrake</button>
       </div>
     </div>
-    <div class="touch-pedals">
+    <div class="touch-pedals" data-zone="pedals">
+      <span class="zone-badge" aria-hidden="true">Pedals</span>
+      <button type="button" class="zone-resize" aria-label="Drag corner to resize pedals">⤡</button>
       <button type="button" data-drive="KeyS"><span class="pedal-icon" aria-hidden="true"></span>Brake</button>
       <button type="button" data-drive="KeyW"><span class="pedal-icon" aria-hidden="true"></span>Gas</button>
     </div>
+  </div>
+</div>
+<div id="touch-editor-bar" hidden role="region" aria-label="Controller layout editor">
+  <span class="editor-hint">Drag controls to move · Drag ⤡ corner or pinch to resize</span>
+  <div class="editor-actions">
+    <button id="editor-style" type="button">Steer: Wheel</button>
+    <button id="editor-trans" type="button">Gear: Auto</button>
+    <button id="editor-input" type="button">Input: Touch</button>
+    <button id="editor-reset" type="button">Reset</button>
+    <button id="editor-done" type="button" class="editor-done">Done</button>
   </div>
 </div>
 <dialog id="panel"><div class="panel-heading"><h2 id="panel-title"></h2><button id="close-panel" aria-label="Close">Close</button></div><div id="panel-content"></div><aside id="room-score" hidden aria-live="polite"></aside></dialog>
@@ -173,6 +189,7 @@
     <h2 id="mission-map-heading">Route 07 · Missions</h2>
     <button id="mission-close" type="button">Close</button>
   </div>
+  <p id="mission-milestone" class="mission-milestone"></p>
   <div id="mission-map-scroll"></div>
   <div class="mission-brief">
     <div class="mission-brief-head">

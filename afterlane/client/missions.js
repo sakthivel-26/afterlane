@@ -195,6 +195,7 @@ export function formatMissionRules(mission) {
 
 export function buildMissionMap(settings, onStartMission) {
   const dialog = document.querySelector('#mission-dialog');
+  const milestone = document.querySelector('#mission-milestone');
   const canvas = document.querySelector('#mission-map-scroll');
   const briefTitle = document.querySelector('#mission-brief-title');
   const briefDesc = document.querySelector('#mission-brief-desc');
@@ -220,9 +221,11 @@ export function buildMissionMap(settings, onStartMission) {
       span.textContent = label;
       return span;
     }));
-    briefReward.textContent = done
-      ? `Completed (${done.bestRemaining.toFixed(1)}s left) · +${m.reward} pts`
-      : `Reward: +${m.reward} pts`;
+    briefReward.textContent = m.id === 5
+      ? (done ? `Completed · +${m.reward} pts · 🎁 BMW M4 Competition Unlocked FREE!` : `Reward: +${m.reward} pts · 🎁 Unlocks BMW M4 Competition FREE!`)
+      : done
+        ? `Completed (${done.bestRemaining.toFixed(1)}s left) · +${m.reward} pts`
+        : `Reward: +${m.reward} pts`;
     briefStart.disabled = locked;
     briefStart.textContent = locked ? `Complete Mission ${m.id - 1} to unlock` : done ? 'Replay Mission' : 'Start Mission';
   }
@@ -230,6 +233,14 @@ export function buildMissionMap(settings, onStartMission) {
   function renderMap() {
     const unlocked = Math.max(1, settings.missionUnlocked || 1);
     const completed = settings.missionCompleted || {};
+    if (milestone) {
+      const doneFirst5 = [1, 2, 3, 4, 5].filter(id => Boolean(completed[id])).length;
+      const m4Unlocked = Boolean(completed[5]);
+      milestone.classList.toggle('is-unlocked', m4Unlocked);
+      milestone.textContent = m4Unlocked
+        ? '🎁 Unlocked FREE: BMW M4 Competition in your Garage!'
+        : `🎁 First 5 Missions Reward: Complete Missions 1–5 to unlock BMW M4 Competition FREE! (${doneFirst5}/5)`;
+    }
     const stepY = 82;
     const padTop = 58;
     const padBottom = 64;
@@ -304,7 +315,9 @@ export function buildMissionMap(settings, onStartMission) {
 
       const label = document.createElement('span');
       label.className = 'mission-node-label';
-      label.textContent = m.mode === 'pack' ? `🏁 ${m.title}` : m.title;
+      label.textContent = m.id === 5
+        ? `🏁 ${m.title} · 🎁 Free BMW M4`
+        : m.mode === 'pack' ? `🏁 ${m.title}` : m.title;
 
       node.append(num, badge, label);
       node.addEventListener('click', () => {

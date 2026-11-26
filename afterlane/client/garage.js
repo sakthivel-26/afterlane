@@ -102,14 +102,21 @@ export function openGarage(settings,actions) {
     const vehicle=vehicles[selected], index=selected;
     if (!models.has(index)) {
       const stage=new T.Group();
-      stage.userData.modelStatus='Loading vehicle model…';
+      const placeholder=vehicleBody(stage,vehicle.type,vehicle.color,vehicle.style).body;
+      placeholder.traverse(node=>{if (node.isMesh && node.name!=='Contact shade') node.castShadow=true;});
+      stage.userData.ready = true;
+      stage.userData.modelStatus='Loading detailed model…';
       models.set(index,stage);
       loadVehicleAsset(vehicle).then(asset=>{
-        const detailed = asset ? asset.clone(true) : vehicleBody(stage,vehicle.type,vehicle.color,vehicle.style).body;
-        detailed.traverse(node=>{if (node.isMesh && node.name!=='Contact shade') node.castShadow=true;});
-        if (asset) stage.add(detailed);
-        stage.userData.ready = true;
-        stage.userData.modelStatus = asset ? 'Detailed model loaded' : 'Simplified preview · detailed model file unavailable';
+        if (asset) {
+          stage.remove(placeholder);
+          const detailed = asset.clone(true);
+          detailed.traverse(node=>{if (node.isMesh && node.name!=='Contact shade') node.castShadow=true;});
+          stage.add(detailed);
+          stage.userData.modelStatus = 'Detailed model loaded';
+        } else {
+          stage.userData.modelStatus = 'Simplified preview · detailed model file unavailable';
+        }
         if (index===selected) update();
         renderer.shadowMap.needsUpdate=true;
       });
@@ -118,27 +125,51 @@ export function openGarage(settings,actions) {
     turntable.add(preview);
     renderer.shadowMap.needsUpdate=true;
   }
+  const sortedVehicles = vehicles
+    .map((vehicle, index) => vehicle ? { vehicle, index } : null)
+    .filter(Boolean)
+    .sort((a, b) => a.vehicle.speed - b.vehicle.speed || a.vehicle.acceleration - b.vehicle.acceleration);
+
+  function refreshListLabels() {
+    for (const [index, choice] of choices) {
+      const vehicle = vehicles[index];
+      const owned = settings.owned.includes(index);
+      const priceText = owned ? 'Owned'
+        : vehicle.cost === 0 ? 'Free'
+        : vehicle.unlockMission ? `Free on Mission ${vehicle.unlockMission} · ${vehicle.cost.toLocaleString()} pts`
+        : `${vehicle.cost.toLocaleString()} pts`;
+      const meta = choice.querySelector('.garage-car-meta');
+      if (meta) meta.textContent = `${vehicle.speed} km/h · ${priceText}`;
+    }
+  }
+
   function update() {
     const vehicle=vehicles[selected], owned=settings.owned.includes(selected);
     const equipped=settings.selected===selected;
     modelName.textContent=vehicle.name;
     stats.textContent=[vehicle.type,vehicle.paint,
       vehicle.electric ? 'Electric drive' : Math.round(gearSpeed(vehicle,1)*3.6)+' km/h at 1st-gear redline'+(vehicle.transmission.estimated?' (est.)':''),
-      (vehicle.estimatedSpeed?'Approx. ':'')+vehicle.speed+' km/h top speed'].filter(Boolean).join(' · ');
+      (vehicle.estimatedSpeed?'Approx. ':'')+vehicle.speed+' km/h top speed',
+      (!owned && vehicle.unlockMission) ? `Free on completing Mission ${vehicle.unlockMission}` : ''].filter(Boolean).join(' · ');
     assetStatus.textContent=models.get(selected)?.userData.modelStatus ?? '';
     wallet.textContent=settings.balance.toLocaleString()+' pts';
     buy.textContent=equipped?'Equipped':(owned || vehicle.cost===0)?'Equip':'Buy & equip · '+vehicle.cost.toLocaleString()+' pts';
-    buy.disabled=equipped||Boolean(renderer&&!models.get(selected)?.userData.ready)||!owned&&settings.balance<vehicle.cost;
+    buy.disabled=equipped||!owned&&settings.balance<vehicle.cost;
     hear.textContent=vehicle.electric ? 'Hear motor' : 'Hear engine';
     hear.disabled=settings.audio==='Muted';
+    refreshListLabels();
     for (const [i,choice] of choices) choice.setAttribute('aria-pressed',String(i===selected));
     viewport.setAttribute('aria-label',vehicle.name+' 360-degree preview. Drag or use the arrow keys to rotate.');
   }
-  for (const [index,vehicle] of vehicles.entries()) {
-    if (!vehicle) continue;
+  for (const {index,vehicle} of sortedVehicles) {
     const choice=document.createElement('button');
     choice.type='button';
-    choice.textContent=vehicle.name;
+    const titleSpan = document.createElement('span');
+    titleSpan.className = 'garage-car-title';
+    titleSpan.textContent = vehicle.name;
+    const metaSpan = document.createElement('small');
+    metaSpan.className = 'garage-car-meta';
+    choice.append(titleSpan, metaSpan);
     choice.addEventListener('click',()=>{
       actions.stopSound();
       selected=index;showModel();update();
@@ -151,6 +182,7 @@ export function openGarage(settings,actions) {
     if (!settings.owned.includes(selected)) {
       if (settings.balance<vehicle.cost) return;
       settings.balance-=vehicle.cost;
+      if (selected===0) settings.bmwM4Bought = true;
       settings.owned.push(selected);
     }
     settings.selected=selected;
@@ -186,6 +218,16 @@ export function openGarage(settings,actions) {
     cancelAnimationFrame(id);lastTime=0;drag=null;actions.stopSound();
   });
   rotationState();
+  let prewarming = false;
+  async function prewarmGarage() {
+    if (prewarming) return;
+    prewarming = true;
+    for (const { vehicle } of sortedVehicles) {
+      if (!panel.open) break;
+      await loadVehicleAsset(vehicle).catch(() => null);
+    }
+    prewarming = false;
+  }
   return () => {
     actions.pause();
     selected=settings.selected;
@@ -193,5 +235,6 @@ export function openGarage(settings,actions) {
     if (!renderer) init();
     showModel();update();resize();
     if(renderer) id=requestAnimationFrame(frame);
+    prewarmGarage();
   };
 }

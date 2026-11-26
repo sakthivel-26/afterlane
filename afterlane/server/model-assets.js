@@ -22,21 +22,23 @@ export async function loadModelAssets() {
       }
     },
   }));
-  const files = await readdir(directory,{withFileTypes:true});
-  await Promise.all(files.filter(file=>file.isFile() && file.name.endsWith('.glb')).map(async ({name})=>{
-    try {
-      const bytes = await readFile(new URL(encodeURIComponent(name),directory));
-      versions['/models/'+name] = createHash('sha256').update(bytes).digest('hex');
-      const asset = name.slice(0,-4);
-      const spec = specs.get(asset);
-      if (!spec) return;
-      const buffer = bytes.buffer.slice(bytes.byteOffset,bytes.byteOffset+bytes.byteLength);
-      const {scene} = await loader.parseAsync(buffer,'');
-      const model = prepareVehicleModel(scene,spec);
-      if (model) footprints.set(asset,model.userData.footprint);
-    } catch (error) {
-      console.warn('Using procedural collision geometry for '+name+'.',error.message);
-    }
-  }));
+  const files = (await readdir(directory,{withFileTypes:true})).filter(file=>file.isFile() && file.name.endsWith('.glb'));
+  for (let i=0;i<files.length;i+=2) {
+    await Promise.all(files.slice(i,i+2).map(async ({name})=>{
+      try {
+        const bytes = await readFile(new URL(encodeURIComponent(name),directory));
+        versions['/models/'+name] = createHash('sha256').update(bytes).digest('hex');
+        const asset = name.slice(0,-4);
+        const spec = specs.get(asset);
+        if (!spec) return;
+        const buffer = bytes.buffer.slice(bytes.byteOffset,bytes.byteOffset+bytes.byteLength);
+        const {scene} = await loader.parseAsync(buffer,'');
+        const model = prepareVehicleModel(scene,spec);
+        if (model) footprints.set(asset,model.userData.footprint);
+      } catch (error) {
+        console.warn('Using procedural collision geometry for '+name+'.',error.message);
+      }
+    }));
+  }
   return {versions,footprints};
 }

@@ -674,11 +674,11 @@ export function buildTraffic(scene, prepareShader=null) {
           firstContact = impact;
           hitCar = car;
         }
-      } else if (!car.passed && playerSpeed > car.speed + 1) {
+      } else if (!car.passed && playerSpeed > car.speed + 2.5) {
         if (Math.abs(dz) < halfLength+1) car.closest = Math.min(car.closest,Math.max(0,dx-halfWidth));
         if (dz < -halfLength) {
           car.passed = true;
-          if (car.closest <= 2.35) near();
+          if (car.closest <= .65) near();
         }
       }
     }

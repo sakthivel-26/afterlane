@@ -3,12 +3,14 @@ import { createReadStream } from 'node:fs';
 import { stat } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { resolve, sep } from 'node:path';
+import { createGzip } from 'node:zlib';
 import { attachRooms } from './rooms.js';
 import { loadModelAssets } from './model-assets.js';
 
 const client = fileURLToPath(new URL('../client/', import.meta.url));
 const vendor = fileURLToPath(new URL('../node_modules/three/', import.meta.url));
-const types = { html:'text/html', js:'text/javascript', css:'text/css', glb:'model/gltf-binary', wav:'audio/wav', jpg:'image/jpeg' };
+const types = { html:'text/html', js:'text/javascript', css:'text/css', glb:'model/gltf-binary', wav:'audio/wav', jpg:'image/jpeg', json:'application/json' };
+const compressible = new Set(['html','js','css','glb','json']);
 const {versions,footprints} = await loadModelAssets();
 const modelVersions = JSON.stringify(versions);
 const server = createServer(async (req, res) => {
@@ -26,11 +28,24 @@ const server = createServer(async (req, res) => {
     const root = resolve(thirdParty ? vendor : client);
     const file = resolve(root, '.' + (thirdParty ? path.slice(6) : path === '/' ? '/index.html' : path));
     if (!file.startsWith(root + sep) || !(await stat(file)).isFile()) throw new Error('Missing file');
-    res.setHeader('Content-Type', types[file.split('.').pop()] || 'application/octet-stream');
+    const ext = file.split('.').pop();
+    res.setHeader('Content-Type', types[ext] || 'application/octet-stream');
     res.setHeader('X-Content-Type-Options', 'nosniff');
-    if (version) res.setHeader('ETag','"'+version+'"');
+    if (version) {
+      res.setHeader('ETag','"'+version+'"');
+      if (requestedVersion === version) res.setHeader('Cache-Control','public, max-age=31536000, immutable');
+    }
     const stream = createReadStream(file);
     stream.on('error', () => res.destroy());
+    const acceptsGzip = /\bgzip\b/i.test(req.headers['accept-encoding'] || '');
+    if (acceptsGzip && compressible.has(ext)) {
+      res.setHeader('Content-Encoding', 'gzip');
+      res.setHeader('Vary', 'Accept-Encoding');
+      const gzip = createGzip({ level: 4 });
+      gzip.on('error', () => res.destroy());
+      stream.pipe(gzip).pipe(res);
+      return;
+    }
     stream.pipe(res);
   } catch {
     res.writeHead(404).end('Not found');

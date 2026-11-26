@@ -1,11 +1,11 @@
 #touch-drive, #touch-orientation { display:none; }
 
 #touch-drive {
-  --arrow-key:clamp(30px,calc(clamp(46px,8vw,68px)*var(--touch-scale,1)*var(--steer-scale,1)),132px);
-  --pedal-key:clamp(32px,calc(clamp(46px,8vw,68px)*var(--touch-scale,1)*var(--pedal-scale,1)),130px);
-  --wheel:clamp(68px,calc(clamp(108px,18vw,156px)*var(--touch-scale,1)*var(--steer-scale,1)),260px);
-  --gate-width:clamp(90px,calc(clamp(136px,18vw,164px)*var(--touch-scale,1)*var(--gear-scale,1)),250px);
-  --gate-height:clamp(52px,calc(80px*var(--touch-scale,1)*var(--gear-scale,1)),140px);
+  --arrow-key:clamp(28px,calc(clamp(46px,8vw,68px)*var(--touch-scale,1)*var(--steer-scale,1)),148px);
+  --pedal-key:clamp(28px,calc(clamp(46px,8vw,68px)*var(--touch-scale,1)*var(--pedal-scale,1)),144px);
+  --wheel:clamp(60px,calc(clamp(108px,18vw,156px)*var(--touch-scale,1)*var(--steer-scale,1)),285px);
+  --gate-width:clamp(84px,calc(clamp(136px,18vw,164px)*var(--touch-scale,1)*var(--gear-scale,1)),285px);
+  --gate-height:clamp(46px,calc(80px*var(--touch-scale,1)*var(--gear-scale,1)),156px);
   opacity:var(--touch-opacity,1);
   position:absolute;
   left:max(13px,env(safe-area-inset-left));
@@ -90,7 +90,7 @@
 }
 .touch-wheel-marker { position:absolute; top:3.1%; left:46%; width:8%; height:2.8%; border-radius:2px; background:#f0f5fccc; }
 
-#touch-drive .touch-pedals button {
+#touch-drive .touch-pedals button[data-drive] {
   width:var(--pedal-key); height:calc(var(--pedal-key)*1.32); align-self:end;
   display:grid; justify-items:center; align-content:center; gap:calc(var(--pedal-key)*.11);
   font-weight:800; font-size:clamp(10px,calc(var(--pedal-key)*.21),19px);
@@ -209,3 +209,105 @@ header.game-menu {
 #top-menu #chase-tools { position:static; display:block; right:auto; top:auto; bottom:auto; color:inherit; }
 #panel #room-score { position:static; max-width:none; margin-top:12px; }
 #panel:not([data-section="multiplayer"]) #room-score { display:none; }
+#touch-drive .zone-badge, #touch-drive .zone-resize { display:none; }
+[data-zone][data-custom-pos="true"] {
+  position:fixed;
+  left:var(--zone-x);
+  top:var(--zone-y);
+  transform:translate(-50%,-50%);
+  margin:0;
+  z-index:3;
+}
+body.editing-controls #intro,
+body.editing-controls header.game-menu,
+body.editing-controls #road-speed,
+body.editing-controls #drive-durability,
+body.editing-controls #mission-hud { display:none !important; }
+body.editing-controls #touch-drive {
+  display:flex !important;
+  z-index:6;
+}
+body.editing-controls [data-zone] {
+  position:relative;
+  pointer-events:auto !important;
+  touch-action:none;
+  cursor:grab;
+  outline:2px dashed #ffc176cc;
+  outline-offset:4px;
+  border-radius:14px;
+  background:#0f182155;
+}
+body.editing-controls [data-zone][data-custom-pos="true"] {
+  position:fixed;
+}
+body.editing-controls [data-zone] > *:not(.zone-resize):not(.zone-badge) {
+  pointer-events:none;
+}
+body.editing-controls #touch-drive .zone-badge {
+  display:block;
+  position:absolute;
+  left:4px;
+  top:-22px;
+  padding:2px 7px;
+  border-radius:6px;
+  background:#121b24e6;
+  border:1px solid #ffc17688;
+  color:#ffd99e;
+  font:700 10.5px/1.2 system-ui,sans-serif;
+  white-space:nowrap;
+  pointer-events:none;
+}
+body.editing-controls #touch-drive .zone-resize {
+  display:grid !important;
+  place-items:center;
+  position:absolute;
+  right:-12px;
+  top:-12px;
+  width:28px;
+  height:28px;
+  min-width:28px;
+  min-height:28px;
+  padding:0 !important;
+  border-radius:50% !important;
+  border:2px solid #16202a !important;
+  background:#ffc176 !important;
+  color:#151d24 !important;
+  font:900 14px/1 system-ui,sans-serif !important;
+  box-shadow:0 3px 10px #00000080 !important;
+  cursor:nwse-resize;
+  pointer-events:auto !important;
+  z-index:2;
+}
+#touch-editor-bar {
+  position:fixed;
+  top:max(10px,env(safe-area-inset-top));
+  left:50%;
+  transform:translateX(-50%);
+  z-index:8;
+  display:flex;
+  flex-wrap:wrap;
+  align-items:center;
+  justify-content:center;
+  gap:7px;
+  max-width:calc(100vw - 20px);
+  padding:8px 12px;
+  border-radius:12px;
+  border:1px solid #ffc17688;
+  background:#101820eb;
+  box-shadow:0 8px 26px #00000088;
+  color:#f1ede4;
+}
+#touch-editor-bar[hidden] { display:none; }
+.editor-hint {
+  font:650 12px/1.2 system-ui,sans-serif;
+  color:#ffd99e;
+  margin-right:4px;
+}
+.editor-actions { display:flex; flex-wrap:wrap; gap:6px; }
+.editor-actions button { padding:6px 10px; font-size:12px; border-radius:7px; }
+.editor-actions .editor-done {
+  background:#ffc176;
+  color:#171f26;
+  font-weight:800;
+  border-color:#ffdba9;
+}

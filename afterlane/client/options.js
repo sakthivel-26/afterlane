@@ -2,9 +2,11 @@ import * as T from 'three';
 import { vehicles } from './vehicle-specs.js';
 import { openGarage } from './garage.js';
 import { normalizeChaseControls } from './chase-camera.js';
+import { applyControllerLayout, createLayoutEditor, defaultControllerLayout, normalizeControllerLayout } from './touch-layout.js';
 
 const key = 'afterlane-profile-v2';
-const defaults = { balance:0, owned:[0], selected:0, traffic:14, weather:'Clear Day', wipers:'Auto', cabinLight:'On', cigarette:'Off', transmission:'Automatic', steering:'Touch', controllerStyle:'Wheel', steeringSensitivity:115, controllerSize:100, steeringSize:100, pedalSize:100, shifterSize:100, controlsOpacity:100, driveSide:'Right-hand drive', quality:'High', audio:'On', missionUnlocked:1, missionCompleted:{} };
+const starterVehicleIndex = 11; // Classic Mini
+const defaults = { balance:0, owned:[starterVehicleIndex], selected:starterVehicleIndex, traffic:14, weather:'Clear Day', wipers:'Auto', cabinLight:'On', cigarette:'Off', transmission:'Automatic', steering:'Touch', controllerStyle:'Wheel', steeringSensitivity:115, controlsOpacity:100, controllerLayout:defaultControllerLayout(), driveSide:'Right-hand drive', quality:'High', audio:'On', missionUnlocked:1, missionCompleted:{} };
 
 function storedProfile() {
   try {
@@ -14,33 +16,26 @@ function storedProfile() {
 }
 
 export function buildOptions(pause, trafficChanged, garageActions) {
-  const settings = {...defaults,...storedProfile()};
+  const savedProfile = storedProfile();
+  const settings = {...defaults,...savedProfile};
   if (!Number.isFinite(settings.balance)) settings.balance=0;
   normalizeChaseControls(settings);
+  normalizeControllerLayout(settings);
   const normalizeRange = (field,min,max)=>{
     const value = settings[field];
     settings[field] = Number.isFinite(value) ? T.MathUtils.clamp(value,min,max) : defaults[field];
   };
   normalizeRange('steeringSensitivity',65,150);
-  normalizeRange('controllerSize',60,160);
-  normalizeRange('steeringSize',60,160);
-  normalizeRange('pedalSize',60,160);
-  normalizeRange('shifterSize',60,160);
   normalizeRange('controlsOpacity',35,100);
   settings.missionUnlocked = Number.isInteger(settings.missionUnlocked) ? T.MathUtils.clamp(settings.missionUnlocked,1,50) : 1;
   if (!settings.missionCompleted || typeof settings.missionCompleted !== 'object' || Array.isArray(settings.missionCompleted)) settings.missionCompleted = {};
   settings.controllerStyle = settings.controllerStyle==='Arrows' ? 'Arrows' : 'Wheel';
-  const applyControllerSize = () => {
-    const rootStyle = document.documentElement.style;
-    rootStyle.setProperty('--touch-scale', settings.controllerSize/100);
-    rootStyle.setProperty('--steer-scale', settings.steeringSize/100);
-    rootStyle.setProperty('--pedal-scale', settings.pedalSize/100);
-    rootStyle.setProperty('--gear-scale', settings.shifterSize/100);
-    rootStyle.setProperty('--touch-opacity', settings.controlsOpacity/100);
-  };
-  applyControllerSize();
-  settings.owned = [...new Set([0,...(Array.isArray(settings.owned) ? settings.owned.filter(index=>Number.isInteger(index) && vehicles[index]) : [])])];
-  if (!settings.owned.includes(settings.selected)) settings.selected = 0;
+  applyControllerLayout(settings);
+  const savedOwned = Array.isArray(savedProfile.owned) ? savedProfile.owned.filter(index=>Number.isInteger(index) && vehicles[index]) : [];
+  const unlockedM4 = Boolean(settings.missionCompleted?.[5]);
+  const baseOwned = savedOwned.filter(index => index !== 0 || unlockedM4 || settings.bmwM4Bought);
+  settings.owned = [...new Set([starterVehicleIndex, ...(unlockedM4 ? [0] : []), ...baseOwned])];
+  if (!settings.owned.includes(settings.selected)) settings.selected = starterVehicleIndex;
   let lastSaved = JSON.parse(JSON.stringify(settings));
   function save() {
     try {
@@ -65,8 +60,6 @@ export function buildOptions(pause, trafficChanged, garageActions) {
     if (className) node.className = className;
     return node;
   };
-  let refreshPreview = () => {};
-  const controllerFields = new Set(['controllerSize','steeringSize','pedalSize','shifterSize','controlsOpacity']);
   function range(label, field, min, max, unit, onChange, step = 1) {
     const row = newNode('div','','setting');
     const value = newNode('span',label+' · '+settings[field]+unit);
@@ -84,8 +77,6 @@ export function buildOptions(pause, trafficChanged, garageActions) {
       settings[field] = clamped;
       slider.value = clamped;
       value.textContent = label+' · '+clamped+unit;
-      if (controllerFields.has(field)) applyControllerSize();
-      refreshPreview();
       save();
       if (notify) onChange?.();
     };
@@ -110,94 +101,22 @@ export function buildOptions(pause, trafficChanged, garageActions) {
       if (field === 'steering' && input.value === 'Tilt' && typeof window.DeviceOrientationEvent?.requestPermission === 'function') {
         window.DeviceOrientationEvent.requestPermission().catch(() => {});
       }
-      refreshPreview();
       save();
     });
     row.append(newNode('span',label),input);
     content.append(row);
   }
-  function showController() {
-    panel.dataset.section = 'controller';
-    title.textContent = 'Custom controller';
-    content.replaceChildren();
-    const preview = newNode('div','','controller-preview');
-    preview.setAttribute('aria-label','Live controller size preview');
-    const leftGroup = newNode('div','','preview-group');
-    const rightGroup = newNode('div','','preview-group');
-    preview.append(leftGroup, rightGroup);
-    content.append(preview);
-    refreshPreview = () => {
-      if (panel.dataset.section !== 'controller') return;
-      const base = settings.controllerSize / 100;
-      const steerPx = Math.round(30 * base * (settings.steeringSize / 100));
-      const pedalW = Math.round(24 * base * (settings.pedalSize / 100));
-      const pedalH = Math.round(pedalW * 1.32);
-      const gearW = Math.round(44 * base * (settings.shifterSize / 100));
-      const gearH = Math.round(28 * base * (settings.shifterSize / 100));
-      leftGroup.replaceChildren();
-      if (settings.controllerStyle === 'Wheel') {
-        const wheel = newNode('div','Wheel','preview-box preview-wheel');
-        const wheelSize = Math.round(steerPx * 1.45);
-        wheel.style.width = `${wheelSize}px`;
-        wheel.style.height = `${wheelSize}px`;
-        leftGroup.append(wheel);
-      } else {
-        for (const glyph of ['‹','›']) {
-          const btn = newNode('div',glyph,'preview-box');
-          btn.style.width = `${steerPx}px`;
-          btn.style.height = `${steerPx}px`;
-          leftGroup.append(btn);
-        }
-      }
-      rightGroup.replaceChildren();
-      const gear = newNode('div','Gear','preview-box');
-      gear.style.width = `${gearW}px`;
-      gear.style.height = `${gearH}px`;
-      const brake = newNode('div','Brake','preview-box');
-      brake.style.width = `${pedalW}px`;
-      brake.style.height = `${pedalH}px`;
-      const gas = newNode('div','Gas','preview-box');
-      gas.style.width = `${pedalW}px`;
-      gas.style.height = `${pedalH}px`;
-      rightGroup.append(gear, brake, gas);
-    };
-    refreshPreview();
-    select('Steering controller','controllerStyle',['Wheel','Arrows']);
-    range('Overall control size','controllerSize',60,160,'%',null,5);
-    range('Steering size','steeringSize',60,160,'%',null,5);
-    range('Brake & Gas size','pedalSize',60,160,'%',null,5);
-    range('Shifter & extras size','shifterSize',60,160,'%',null,5);
-    range('Controls opacity','controlsOpacity',35,100,'%',null,5);
-    range('Steering sensitivity','steeringSensitivity',65,150,'%',null,5);
-    select('Steering input','steering',['Touch','Tilt']);
-    select('Transmission','transmission',['Automatic','Manual']);
-    const actions = newNode('div','','controller-actions');
-    const resetBtn = newNode('button','Reset sizes');
-    resetBtn.type = 'button';
-    resetBtn.addEventListener('click', () => {
-      for (const field of controllerFields) settings[field] = defaults[field];
-      applyControllerSize();
-      save();
-      showController();
-    });
-    const back = newNode('button','Back to settings');
-    back.type = 'button';
-    back.addEventListener('click',showSettings);
-    const done = newNode('button','Done');
-    done.type = 'button';
-    done.addEventListener('click', () => panel.close());
-    actions.append(resetBtn, back, done);
-    content.append(actions);
-  }
+  const layoutEditor = createLayoutEditor(settings, { pause, save });
   function showSettings() {
     panel.dataset.section = 'settings';
     title.textContent = 'Driving settings';
     content.replaceChildren();
-    const controls = newNode('button','Custom controller (size & layout)');
+    const controls = newNode('button','Custom controller (drag & resize)');
     controls.type = 'button';
-    controls.addEventListener('click',showController);
+    controls.addEventListener('click', () => layoutEditor.open());
     content.append(controls);
     range('Traffic vehicles','traffic',0,24,'',trafficChanged);
+    range('Steering sensitivity','steeringSensitivity',65,150,'%',null,5);
     select('Weather','weather',['Clear Day','Dynamic','Clear Night','Light rain','Heavy rain','Thunderstorm']);
     select('Wipers','wipers',['Auto','Fast','Off']);
     select('Cabin light','cabinLight',['On','Off']);
@@ -215,9 +134,9 @@ export function buildOptions(pause, trafficChanged, garageActions) {
   const missionDialog = document.querySelector('#mission-dialog');
   document.querySelector('#garage').addEventListener('click',openGarage(settings,{...garageActions,pause,save}));
   document.querySelector('#settings').addEventListener('click', () => open(showSettings));
-  document.querySelector('#custom-controls')?.addEventListener('click', () => open(showController));
+  document.querySelector('#custom-controls')?.addEventListener('click', () => layoutEditor.open());
   document.querySelector('#close-panel').addEventListener('click', () => panel.close());
-  return {settings,panel, save, openSettings:() => open(showSettings), openController:() => open(showController), get modalOpen() { return panel.open||garagePanel.open||Boolean(missionDialog?.open); }};
+  return {settings,panel, save, openSettings:() => open(showSettings), openController:() => layoutEditor.open(), get editingControls() { return layoutEditor.isOpen; }, get modalOpen() { return panel.open||garagePanel.open||Boolean(missionDialog?.open)||layoutEditor.isOpen; }};
 }
 
 export function buildRain(rig) {
