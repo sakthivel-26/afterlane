@@ -4,7 +4,7 @@ import { openGarage } from './garage.js';
 import { normalizeChaseControls } from './chase-camera.js';
 
 const key = 'afterlane-profile-v2';
-const defaults = { balance:0, owned:[0], selected:0, traffic:14, weather:'Clear Day', wipers:'Auto', cabinLight:'On', cigarette:'Off', transmission:'Automatic', steering:'Touch', controllerStyle:'Wheel', steeringSensitivity:115, controllerSize:100, driveSide:'Right-hand drive', quality:'Medium', audio:'On', missionUnlocked:1, missionCompleted:{} };
+const defaults = { balance:0, owned:[0], selected:0, traffic:14, weather:'Clear Day', wipers:'Auto', cabinLight:'On', cigarette:'Off', transmission:'Automatic', steering:'Touch', controllerStyle:'Wheel', steeringSensitivity:115, controllerSize:100, steeringSize:100, pedalSize:100, shifterSize:100, controlsOpacity:100, driveSide:'Right-hand drive', quality:'High', audio:'On', missionUnlocked:1, missionCompleted:{} };
 
 function storedProfile() {
   try {
@@ -22,11 +22,22 @@ export function buildOptions(pause, trafficChanged, garageActions) {
     settings[field] = Number.isFinite(value) ? T.MathUtils.clamp(value,min,max) : defaults[field];
   };
   normalizeRange('steeringSensitivity',65,150);
-  normalizeRange('controllerSize',85,115);
+  normalizeRange('controllerSize',60,160);
+  normalizeRange('steeringSize',60,160);
+  normalizeRange('pedalSize',60,160);
+  normalizeRange('shifterSize',60,160);
+  normalizeRange('controlsOpacity',35,100);
   settings.missionUnlocked = Number.isInteger(settings.missionUnlocked) ? T.MathUtils.clamp(settings.missionUnlocked,1,50) : 1;
   if (!settings.missionCompleted || typeof settings.missionCompleted !== 'object' || Array.isArray(settings.missionCompleted)) settings.missionCompleted = {};
   settings.controllerStyle = settings.controllerStyle==='Arrows' ? 'Arrows' : 'Wheel';
-  const applyControllerSize = ()=>document.documentElement.style.setProperty('--touch-scale',settings.controllerSize/100);
+  const applyControllerSize = () => {
+    const rootStyle = document.documentElement.style;
+    rootStyle.setProperty('--touch-scale', settings.controllerSize/100);
+    rootStyle.setProperty('--steer-scale', settings.steeringSize/100);
+    rootStyle.setProperty('--pedal-scale', settings.pedalSize/100);
+    rootStyle.setProperty('--gear-scale', settings.shifterSize/100);
+    rootStyle.setProperty('--touch-opacity', settings.controlsOpacity/100);
+  };
   applyControllerSize();
   settings.owned = [...new Set([0,...(Array.isArray(settings.owned) ? settings.owned.filter(index=>Number.isInteger(index) && vehicles[index]) : [])])];
   if (!settings.owned.includes(settings.selected)) settings.selected = 0;
@@ -54,19 +65,36 @@ export function buildOptions(pause, trafficChanged, garageActions) {
     if (className) node.className = className;
     return node;
   };
-  function range(label, field, min, max, unit, onChange) {
-    const row = newNode('label','','setting');
+  let refreshPreview = () => {};
+  const controllerFields = new Set(['controllerSize','steeringSize','pedalSize','shifterSize','controlsOpacity']);
+  function range(label, field, min, max, unit, onChange, step = 1) {
+    const row = newNode('div','','setting');
     const value = newNode('span',label+' · '+settings[field]+unit);
+    const control = newNode('div','','range-control');
+    const minus = newNode('button','−','step-btn');
+    minus.type = 'button';
+    minus.setAttribute('aria-label',`Decrease ${label}`);
     const slider = newNode('input');
-    Object.assign(slider,{type:'range', min, max, value:settings[field]});
-    slider.addEventListener('input', () => {
-      settings[field] = Number(slider.value);
-      value.textContent = label+' · '+settings[field]+unit;
-      if (field==='controllerSize') applyControllerSize();
+    Object.assign(slider,{type:'range', min, max, step, value:settings[field]});
+    const plus = newNode('button','+','step-btn');
+    plus.type = 'button';
+    plus.setAttribute('aria-label',`Increase ${label}`);
+    const updateValue = (next, notify = true) => {
+      const clamped = T.MathUtils.clamp(Math.round(next), min, max);
+      settings[field] = clamped;
+      slider.value = clamped;
+      value.textContent = label+' · '+clamped+unit;
+      if (controllerFields.has(field)) applyControllerSize();
+      refreshPreview();
       save();
-    });
-    if (onChange) slider.addEventListener('change', onChange);
-    row.append(value,slider);
+      if (notify) onChange?.();
+    };
+    slider.addEventListener('input', () => updateValue(Number(slider.value), false));
+    slider.addEventListener('change', () => onChange?.());
+    minus.addEventListener('click', () => updateValue(settings[field] - step, true));
+    plus.addEventListener('click', () => updateValue(settings[field] + step, true));
+    control.append(minus, slider, plus);
+    row.append(value, control);
     content.append(row);
   }
   function select(label, field, values) {
@@ -82,29 +110,90 @@ export function buildOptions(pause, trafficChanged, garageActions) {
       if (field === 'steering' && input.value === 'Tilt' && typeof window.DeviceOrientationEvent?.requestPermission === 'function') {
         window.DeviceOrientationEvent.requestPermission().catch(() => {});
       }
+      refreshPreview();
       save();
     });
     row.append(newNode('span',label),input);
     content.append(row);
   }
   function showController() {
-    title.textContent = 'Controller customization';
+    panel.dataset.section = 'controller';
+    title.textContent = 'Custom controller';
     content.replaceChildren();
+    const preview = newNode('div','','controller-preview');
+    preview.setAttribute('aria-label','Live controller size preview');
+    const leftGroup = newNode('div','','preview-group');
+    const rightGroup = newNode('div','','preview-group');
+    preview.append(leftGroup, rightGroup);
+    content.append(preview);
+    refreshPreview = () => {
+      if (panel.dataset.section !== 'controller') return;
+      const base = settings.controllerSize / 100;
+      const steerPx = Math.round(30 * base * (settings.steeringSize / 100));
+      const pedalW = Math.round(24 * base * (settings.pedalSize / 100));
+      const pedalH = Math.round(pedalW * 1.32);
+      const gearW = Math.round(44 * base * (settings.shifterSize / 100));
+      const gearH = Math.round(28 * base * (settings.shifterSize / 100));
+      leftGroup.replaceChildren();
+      if (settings.controllerStyle === 'Wheel') {
+        const wheel = newNode('div','Wheel','preview-box preview-wheel');
+        const wheelSize = Math.round(steerPx * 1.45);
+        wheel.style.width = `${wheelSize}px`;
+        wheel.style.height = `${wheelSize}px`;
+        leftGroup.append(wheel);
+      } else {
+        for (const glyph of ['‹','›']) {
+          const btn = newNode('div',glyph,'preview-box');
+          btn.style.width = `${steerPx}px`;
+          btn.style.height = `${steerPx}px`;
+          leftGroup.append(btn);
+        }
+      }
+      rightGroup.replaceChildren();
+      const gear = newNode('div','Gear','preview-box');
+      gear.style.width = `${gearW}px`;
+      gear.style.height = `${gearH}px`;
+      const brake = newNode('div','Brake','preview-box');
+      brake.style.width = `${pedalW}px`;
+      brake.style.height = `${pedalH}px`;
+      const gas = newNode('div','Gas','preview-box');
+      gas.style.width = `${pedalW}px`;
+      gas.style.height = `${pedalH}px`;
+      rightGroup.append(gear, brake, gas);
+    };
+    refreshPreview();
     select('Steering controller','controllerStyle',['Wheel','Arrows']);
-    range('Steering sensitivity','steeringSensitivity',65,150,'%');
-    range('Button size','controllerSize',85,115,'%');
+    range('Overall control size','controllerSize',60,160,'%',null,5);
+    range('Steering size','steeringSize',60,160,'%',null,5);
+    range('Brake & Gas size','pedalSize',60,160,'%',null,5);
+    range('Shifter & extras size','shifterSize',60,160,'%',null,5);
+    range('Controls opacity','controlsOpacity',35,100,'%',null,5);
+    range('Steering sensitivity','steeringSensitivity',65,150,'%',null,5);
     select('Steering input','steering',['Touch','Tilt']);
     select('Transmission','transmission',['Automatic','Manual']);
+    const actions = newNode('div','','controller-actions');
+    const resetBtn = newNode('button','Reset sizes');
+    resetBtn.type = 'button';
+    resetBtn.addEventListener('click', () => {
+      for (const field of controllerFields) settings[field] = defaults[field];
+      applyControllerSize();
+      save();
+      showController();
+    });
     const back = newNode('button','Back to settings');
     back.type = 'button';
     back.addEventListener('click',showSettings);
-    content.append(back);
+    const done = newNode('button','Done');
+    done.type = 'button';
+    done.addEventListener('click', () => panel.close());
+    actions.append(resetBtn, back, done);
+    content.append(actions);
   }
   function showSettings() {
     panel.dataset.section = 'settings';
     title.textContent = 'Driving settings';
     content.replaceChildren();
-    const controls = newNode('button','Controller customization');
+    const controls = newNode('button','Custom controller (size & layout)');
     controls.type = 'button';
     controls.addEventListener('click',showController);
     content.append(controls);
@@ -114,7 +203,7 @@ export function buildOptions(pause, trafficChanged, garageActions) {
     select('Cabin light','cabinLight',['On','Off']);
     select('Driver cigarette','cigarette',['Off','On']);
     select('Driving position','driveSide',['Right-hand drive','Left-hand drive']);
-    select('Graphics','quality',['Low','Medium','High']);
+    select('Graphics','quality',['Low','Medium','High','Ultra']);
     select('Audio','audio',['On','Muted']);
   }
   const open = render => {
@@ -126,8 +215,9 @@ export function buildOptions(pause, trafficChanged, garageActions) {
   const missionDialog = document.querySelector('#mission-dialog');
   document.querySelector('#garage').addEventListener('click',openGarage(settings,{...garageActions,pause,save}));
   document.querySelector('#settings').addEventListener('click', () => open(showSettings));
+  document.querySelector('#custom-controls')?.addEventListener('click', () => open(showController));
   document.querySelector('#close-panel').addEventListener('click', () => panel.close());
-  return {settings,panel, save, openSettings:() => open(showSettings), get modalOpen() { return panel.open||garagePanel.open||Boolean(missionDialog?.open); }};
+  return {settings,panel, save, openSettings:() => open(showSettings), openController:() => open(showController), get modalOpen() { return panel.open||garagePanel.open||Boolean(missionDialog?.open); }};
 }
 
 export function buildRain(rig) {

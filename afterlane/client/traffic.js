@@ -200,17 +200,17 @@ function wheelGeometry(radius,sports,side) {
   add(new T.CylinderGeometry(radius,radius,.22,sports ? 32 : 20).rotateZ(axleTurn),0x17181a);
   add(new T.CylinderGeometry(radius*.62,radius*.62,.235,24).rotateZ(axleTurn),0x8c9298);
   const rim = radius*.56;
-  add(new T.CircleGeometry(rim,20).rotateY(faceTurn).translate(side*.119,0,0),0x202831);
-  add(new T.TorusGeometry(rim,.008,6,24).rotateY(faceTurn).translate(side*.122,0,0),0xadb3bc);
-  const spokeCount = sports ? 10 : 6;
+  add(new T.CircleGeometry(rim,20).rotateY(faceTurn).translate(side*.119,0,0),0x1a2129);
+  add(new T.TorusGeometry(rim,.012,6,24).rotateY(faceTurn).translate(side*.122,0,0),0xc8d0da);
+  const spokeCount = sports ? 8 : 5;
   for (let spoke=0;spoke<spokeCount;spoke++) {
     const angle = spoke*Math.PI*2/spokeCount;
-    const spokeMesh = new T.BoxGeometry(.014,rim*.80,.008).rotateZ(-angle)
-      .translate(Math.sin(angle)*rim*.57,Math.cos(angle)*rim*.57,.007)
+    const spokeMesh = new T.BoxGeometry(.026,rim*.84,.012).rotateZ(-angle)
+      .translate(Math.sin(angle)*rim*.54,Math.cos(angle)*rim*.54,.009)
       .rotateY(faceTurn).translate(side*.119,0,0);
-    add(spokeMesh,0xb3b9c2);
+    add(spokeMesh,0xd2dae4);
   }
-  add(new T.CircleGeometry(rim*.23,14).rotateY(faceTurn).translate(side*.133,0,0),0x808b97);
+  add(new T.CircleGeometry(rim*.26,14).rotateY(faceTurn).translate(side*.134,0,0),0x8b97a4);
   const geometry = mergeGeometries(parts);
   for (const part of parts) part.dispose();
   return geometry;

@@ -29,6 +29,8 @@ const intro = document.querySelector('#intro');
 const start = document.querySelector('#start');
 const playMissions = document.querySelector('#play-missions');
 const openSettingsBtn = document.querySelector('#open-settings');
+const hudCamera = document.querySelector('#hud-camera');
+const hudCameraLabel = document.querySelector('#hud-camera-label');
 const view = document.querySelector('#view');
 const error = document.querySelector('#error');
 const menu = document.querySelector('#top-menu');
@@ -90,7 +92,7 @@ try {
 }
 
 function run(renderer, plants, driverHand, junctionAsset, initialIndex = 0, initialCarAsset = null) {
-  renderer.setPixelRatio(Math.min(devicePixelRatio, 1.7));
+  renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2.35));
   renderer.toneMapping = T.ACESFilmicToneMapping;
   renderer.outputColorSpace = T.SRGBColorSpace;
   viewport.append(renderer.domElement);
@@ -612,6 +614,7 @@ function run(renderer, plants, driverHand, junctionAsset, initialIndex = 0, init
     touchWheel.reset();
     touchShifter.reset();
     touch.hidden = !value;
+    if (hudCamera) hudCamera.hidden = !value;
     if (durabilityBox) durabilityBox.hidden = !value || rooms.active || Boolean(activeMission);
     if (!value) pullBrakeUntil = 0;
     intro.hidden = value;
@@ -636,6 +639,8 @@ function run(renderer, plants, driverHand, junctionAsset, initialIndex = 0, init
   function setView(index) {
     mode = index;
     view.firstChild.textContent = modes[mode] + ' view ';
+    if (hudCameraLabel) hudCameraLabel.textContent = modes[mode];
+    if (hudCamera) hudCamera.setAttribute('aria-label', `Switch camera view (${modes[mode]})`);
     enableChaseOrbit(mode===2);
     if (mode === 0) lastGauge = -Infinity;
     if (mode === 2) {
@@ -742,6 +747,7 @@ function run(renderer, plants, driverHand, junctionAsset, initialIndex = 0, init
     setPlaying(true);
   });
   view.addEventListener('click', () => { switchView(); view.blur(); });
+  hudCamera?.addEventListener('click', () => { switchView(); hudCamera.blur(); });
   menu.addEventListener('click',event=>{ if (event.target.closest('button')) menu.open=false; });
   document.addEventListener('pointerdown',event=>{ if (menu.open && !menu.contains(event.target)) menu.open=false; });
   window.addEventListener('keydown', event => {
@@ -807,7 +813,7 @@ function run(renderer, plants, driverHand, junctionAsset, initialIndex = 0, init
     const size = playerSizes[selected];
     if (quality !== settings.quality) {
       quality = settings.quality;
-      renderer.setPixelRatio(Math.min(devicePixelRatio,{Low:.8,Medium:1.25,High:1.5}[quality]));
+      renderer.setPixelRatio(Math.min(devicePixelRatio || 1, { Low: 1.0, Medium: 1.65, High: 2.35, Ultra: 3.0 }[quality] || 2.35));
       resize();
     }
     const progress = rooms.active ? rooms.route : routeProgress;
@@ -1059,11 +1065,12 @@ function run(renderer, plants, driverHand, junctionAsset, initialIndex = 0, init
     scene.fog.density = Math.max(.0020, .0066+wet*.0034+(snowy ? .0026 : 0)-daylight*.0042);
     ambient.color.copy(nightSky).lerp(sunSky, sunBlend);
     ambient.groundColor.copy(nightGround).lerp(sunGround, sunBlend);
-    ambient.intensity = .24+neighborhoodLight*.68+daylight*1.36;
-    scene.environmentIntensity = .14+neighborhoodLight*.08+daylight*.64;
+    ambient.intensity = .22+neighborhoodLight*.46+daylight*.56;
+    scene.environmentIntensity = .14+neighborhoodLight*.08+daylight*.18;
     key.color.copy(nightKeyColor).lerp(sunColor, sunBlend);
-    key.intensity = .12+neighborhoodLight*.32+daylight*(3.15-wet*1.4);
+    key.intensity = .12+neighborhoodLight*.28+daylight*(1.48-wet*.65);
     moon.intensity = (.19+neighborhoodLight*.33)*(1-wet*.85)*(1-daylight)+flash*4.5;
+    renderer.toneMappingExposure = 1 - daylight*.16;
     for (const beam of beams) {
       beam.intensity = [0,620,1330][headlights]*beamGlare*(1-daylight*.86);
       beam.target.position.z = headlights === 2 ? -46 : -29;
@@ -1087,7 +1094,7 @@ function run(renderer, plants, driverHand, junctionAsset, initialIndex = 0, init
       camera.updateProjectionMatrix();
     }
     if (garagePanel.open || renderer.getContext().isContextLost()) return;
-    if (mode === 0 && ++frame % ({Low:4,Medium:2,High:1}[quality]) === 0) {
+    if (mode === 0 && ++frame % ({ Low: 4, Medium: 2, High: 1, Ultra: 1 }[quality] || 1) === 0) {
       car.cabin.visible = false;
       const mirror = car.mirrors[mirrorIndex++ % car.mirrors.length];
       rearView.position.copy(rig.localToWorld(eye.copy(mirror.position).add(mirrorOffset.set(0,tall,.2))));
@@ -1099,8 +1106,8 @@ function run(renderer, plants, driverHand, junctionAsset, initialIndex = 0, init
       renderer.setRenderTarget(null);
       car.cabin.visible = true;
     }
-    if (quality !== 'High') renderer.render(scene,camera);
-    else effects.render(now,Math.abs(speed),quality);
+    if (quality !== 'High' && quality !== 'Ultra') renderer.render(scene,camera);
+    else effects.render(now,Math.abs(speed),quality,daylight);
   };
   setLoading(90, 'Preparing driving view…');
   stepScene(performance.now());

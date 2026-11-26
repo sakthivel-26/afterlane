@@ -174,7 +174,7 @@ export function buildCar(rig,driverHand=null) {
   box(cabin, rubber, 0, 1.46, -.843, .33, .094, .025);
   const mirrors = [];
   function mirror(x,y,z,w,h,look,yaw) {
-    const target = new T.WebGLRenderTarget(256,128);
+    const target = new T.WebGLRenderTarget(512,256);
     const material = new T.MeshBasicMaterial({map:target.texture,toneMapped:false});
     const face = mesh(cabin,new T.PlaneGeometry(w,h),material,x,y,z);
     const uv = face.geometry.attributes.uv;
@@ -441,8 +441,9 @@ export function prepareVehicleModel(scene,vehicle) {
     const materials = Array.isArray(node.material) ? node.material : [node.material];
     for (const mat of materials) {
       if (!mat) continue;
-      if (typeof mat.roughness === 'number') mat.roughness = Math.max(mat.roughness,.08);
-      if (typeof mat.metalness === 'number') mat.metalness = Math.min(mat.metalness,.92);
+      if (typeof mat.roughness === 'number') mat.roughness = Math.max(mat.roughness,.14);
+      if (typeof mat.metalness === 'number') mat.metalness = Math.min(mat.metalness,.86);
+      if (typeof mat.envMapIntensity === 'number') mat.envMapIntensity = Math.min(mat.envMapIntensity,.78);
       if (mat.emissive && mat.emissive.r > .8 && mat.emissive.g > .8 && mat.emissive.b > .8) {
         mat.emissiveIntensity = Math.min(mat.emissiveIntensity ?? 1,.55);
       }

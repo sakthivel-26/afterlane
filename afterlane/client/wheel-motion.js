@@ -26,10 +26,123 @@ export function wheelAnimator(body) {
   };
 }
 
+function subsetGeometry(source, triangles) {
+  const geometry = new BufferGeometry();
+  const idx = source.index;
+  const vertCount = triangles.length * 3;
+  for (const [name, attr] of Object.entries(source.attributes)) {
+    const itemSize = attr.itemSize;
+    const array = new attr.array.constructor(vertCount * itemSize);
+    for (let t = 0; t < triangles.length; t++) {
+      const tri = triangles[t];
+      for (let k = 0; k < 3; k++) {
+        const srcVert = idx ? idx.getX(tri * 3 + k) : tri * 3 + k;
+        const dstBase = (t * 3 + k) * itemSize;
+        for (let c = 0; c < itemSize; c++) array[dstBase + c] = attr.array[srcVert * itemSize + c];
+      }
+    }
+    geometry.setAttribute(name, new BufferAttribute(array, itemSize, attr.normalized));
+  }
+  geometry.computeBoundingBox();
+  geometry.computeBoundingSphere();
+  return geometry;
+}
+
+export function rigClusteredWheels(model) {
+  model.updateMatrixWorld(true);
+  const modelBox = new Box3().setFromObject(model);
+  const modelSize = modelBox.getSize(new Vector3());
+  if (modelBox.isEmpty() || modelSize.y <= 0 || modelSize.x <= 0) return model;
+
+  const point = new Vector3();
+  const extracted = [];
+
+  model.traverse(node => {
+    if (!node.isMesh || !node.geometry?.attributes?.position) return;
+    const g = node.geometry;
+    const pos = g.attributes.position;
+    const idx = g.index;
+    const triCount = Math.floor((idx ? idx.count : pos.count) / 3);
+    if (triCount < 12) return;
+
+    const parent = Array.from({length: pos.count}, (_, i) => i);
+    const find = x => { while (parent[x] !== x) { parent[x] = parent[parent[x]]; x = parent[x]; } return x; };
+    const unite = (a, b) => { a = find(a); b = find(b); if (a !== b) parent[b] = a; };
+    const vmap = new Map();
+    const pts = new Array(pos.count);
+    for (let i = 0; i < pos.count; i++) {
+      point.fromBufferAttribute(pos, i).applyMatrix4(node.matrixWorld);
+      pts[i] = point.clone();
+      const key = `${Math.round(point.x * 500)},${Math.round(point.y * 500)},${Math.round(point.z * 500)}`;
+      const existing = vmap.get(key);
+      if (existing !== undefined) unite(existing, i);
+      else vmap.set(key, i);
+    }
+    for (let t = 0; t < triCount; t++) {
+      const a = idx ? idx.getX(t * 3) : t * 3;
+      const b = idx ? idx.getX(t * 3 + 1) : t * 3 + 1;
+      const c = idx ? idx.getX(t * 3 + 2) : t * 3 + 2;
+      unite(a, b);
+      unite(a, c);
+    }
+    const comps = new Map();
+    for (let t = 0; t < triCount; t++) {
+      const a = idx ? idx.getX(t * 3) : t * 3;
+      const root = find(a);
+      let comp = comps.get(root);
+      if (!comp) comps.set(root, comp = { box: new Box3(), tris: [] });
+      comp.tris.push(t);
+      const b = idx ? idx.getX(t * 3 + 1) : t * 3 + 1;
+      const c = idx ? idx.getX(t * 3 + 2) : t * 3 + 2;
+      comp.box.expandByPoint(pts[a]).expandByPoint(pts[b]).expandByPoint(pts[c]);
+    }
+    const wheelComps = [];
+    for (const comp of comps.values()) {
+      const s = comp.box.getSize(new Vector3());
+      const ctr = comp.box.getCenter(new Vector3());
+      if (comp.box.min.y <= modelBox.min.y + modelSize.y * .08 &&
+          s.y > modelSize.y * .24 && s.y < modelSize.y * .65 &&
+          Math.abs(s.y - s.z) < Math.max(s.y, s.z) * .20 &&
+          Math.abs(ctr.x) > modelSize.x * .24 && s.x < s.y * .8) {
+        wheelComps.push({ ...comp, ctr, radius: (s.y + s.z) / 4 });
+      }
+    }
+    if (wheelComps.length >= 4) extracted.push({ node, wheelComps, triCount });
+  });
+
+  if (!extracted.length) return model;
+
+  const body = new Group(), sprung = new Group();
+  sprung.name = 'Sprung exterior';
+  sprung.add(model);
+  body.add(sprung);
+
+  const origin = new Matrix4();
+  for (const { node, wheelComps, triCount } of extracted) {
+    const frontZ = Math.min(...wheelComps.map(w => w.ctr.z));
+    const wheelTriSet = new Uint8Array(triCount);
+    for (const w of wheelComps) {
+      for (const t of w.tris) wheelTriSet[t] = 1;
+      const steers = Math.abs(w.ctr.z - frontZ) < w.radius * .7;
+      const { roller } = wheelPivot(body, w.ctr, w.radius, steers);
+      const wheelMesh = new Mesh(subsetGeometry(node.geometry, w.tris), node.material);
+      origin.makeTranslation(-w.ctr.x, -w.ctr.y, -w.ctr.z).multiply(node.matrixWorld);
+      origin.decompose(wheelMesh.position, wheelMesh.quaternion, wheelMesh.scale);
+      roller.add(wheelMesh);
+    }
+    const bodyTris = [];
+    for (let t = 0; t < triCount; t++) if (!wheelTriSet[t]) bodyTris.push(t);
+    const bodyGeo = subsetGeometry(node.geometry, bodyTris);
+    node.geometry.dispose();
+    node.geometry = bodyGeo;
+  }
+  return body;
+}
+
 export function rigNamedWheels(model) {
   const roles = ['FL','FR','RL','RR'];
   const parts = roles.map(role=>model.getObjectByName('Wheel_'+role));
-  if (parts.some(part=>!part)) return model;
+  if (parts.some(part=>!part)) return rigClusteredWheels(model);
   for (const role of ['RL_Inner','RR_Inner']) {
     const part = model.getObjectByName('Wheel_'+role);
     if (part) {

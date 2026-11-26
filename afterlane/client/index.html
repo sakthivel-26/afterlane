@@ -45,11 +45,19 @@
 <main>
 <div id="viewport" aria-label="Three-dimensional highway driving view"></div>
 <header class="game-menu">
+  <button id="hud-camera" type="button" aria-label="Switch camera view (Cabin)" title="Switch camera view (C)" hidden>
+    <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+      <circle cx="12" cy="13" r="4"/>
+    </svg>
+    <span id="hud-camera-label">Cabin</span>
+  </button>
   <details id="top-menu">
     <summary aria-label="Game menu" title="Game menu"><i></i><i></i><i></i></summary>
     <nav aria-label="Game options">
       <button id="multiplayer" type="button">Multiplayer</button>
       <button id="settings" type="button">Settings</button>
+      <button id="custom-controls" type="button">Custom controller</button>
       <button id="garage" type="button">Garage</button>
       <button id="view" type="button">Cabin view</button>
       <div id="chase-tools" hidden><button type="button">Recenter camera</button></div>

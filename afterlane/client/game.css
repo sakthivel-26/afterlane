@@ -143,6 +143,27 @@ header{z-index:1}nav{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:7p
 #flight-percent{font-size:.8rem;font-weight:750;font-variant-numeric:tabular-nums;text-shadow:0 1px 4px #000}
 #flight-controls button{padding:6px 8px;touch-action:none}
 #flight-controls button[data-held]{background:#526a78}
+.range-control{display:flex;align-items:center;gap:6px}
+.range-control input[type=range]{flex:1;min-width:74px}
+.step-btn{
+  min-width:30px;height:30px;padding:0;border-radius:6px;
+  border:1px solid #ffffff38;background:#222d37;color:#f4efe6;
+  font:800 15px/1 system-ui,sans-serif;cursor:pointer;
+}
+.step-btn:hover{background:#2d3b48;border-color:#ffc176}
+.controller-preview{
+  display:flex;align-items:flex-end;justify-content:space-between;gap:12px;
+  padding:10px 12px;margin-bottom:10px;border-radius:10px;
+  border:1px solid #ffffff22;background:#0e151c;overflow:hidden;min-height:66px;
+}
+.preview-group{display:flex;align-items:flex-end;gap:5px;opacity:var(--touch-opacity,1);transform-origin:bottom center}
+.preview-box{
+  display:grid;place-items:center;border:1px solid #dbe5ed88;border-radius:8px;
+  background:#3b4d5f88;color:#edf4fa;font:700 10px/1 system-ui,sans-serif;
+  transition:width .1s ease,height .1s ease;
+}
+.preview-wheel{border-radius:50%;border-width:3px}
+.controller-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
 @media(pointer:coarse){#flight-controls kbd{display:none}}
 #garage-list{
   max-height:clamp(115px,40vh,370px);
