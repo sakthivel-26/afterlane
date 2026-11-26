@@ -191,7 +191,7 @@ function run(renderer, plants, driverHand, junctionAsset, initialIndex = 0, init
   const lamps = group(rig);
   const beams = [];
   for (const side of [-1, 1]) {
-    const beam = new T.SpotLight(0xffe1ba, 620, 85, .24, .62, 1.12);
+    const beam = new T.SpotLight(0xffe1ba, isAndroidApp ? 400 : 620, isAndroidApp ? 55 : 85, .24, .62, 1.12);
     beam.position.set(side*.67,.83,-2.22);
     beam.target.position.set(side*.9, .05, -29);
     lamps.add(beam, beam.target);
@@ -916,7 +916,7 @@ function run(renderer, plants, driverHand, junctionAsset, initialIndex = 0, init
     updateController(vehicle);
     const model = exteriorModels[selected];
     const trafficContactPossible = Math.min(previousHeight,flight.height)<trafficClearance && now >= impactGraceUntil;
-    traffic.update(playing ? dt : 0,distance,x,rooms.active ? 0 : settings.traffic,playing && trafficContactPossible,speed,model.footprint,yaw,previous,() => {
+    traffic.update(playing ? dt : 0,distance,x,rooms.active ? 0 : (isAndroidApp ? Math.min(settings.traffic, 10) : settings.traffic),playing && trafficContactPossible,speed,model.footprint,yaw,previous,() => {
       if (flight.height<.1) {
         award(5);
         if (activeMission?.status === 'active') activeMission.closeOvertakes++;
@@ -1064,8 +1064,8 @@ function run(renderer, plants, driverHand, junctionAsset, initialIndex = 0, init
       );
       camera.lookAt(aim);
     }
-    rain.update(wet,Math.abs(speed),dt,1.8+tall);
-    snow(snowy,speed,dt,now,1.8+tall);
+    rain.update(isAndroidApp && quality === 'Low' ? 0 : wet,Math.abs(speed),dt,1.8+tall);
+    snow(isAndroidApp && quality === 'Low' ? false : snowy,speed,dt,now,1.8+tall);
     if (wet > 0 && playing && settings.wipers !== 'Off') {
       sweep += dt*(settings.wipers === 'Fast' ? 7.4 : 2.2+wet*3.05+Math.min(Math.abs(speed)*.07,2.2));
     } else if (sweep%(2*Math.PI) > 1e-6) {
@@ -1109,7 +1109,8 @@ function run(renderer, plants, driverHand, junctionAsset, initialIndex = 0, init
       camera.updateProjectionMatrix();
     }
     if (garagePanel.open || renderer.getContext().isContextLost()) return;
-    if (mode === 0 && ++frame % ({ Low: 4, Medium: 2, High: 1, Ultra: 1 }[quality] || 1) === 0) {
+    const mirrorSkip = { Low: isAndroidApp ? 0 : 4, Medium: isAndroidApp ? 4 : 2, High: 1, Ultra: 1 }[quality] || 1;
+    if (mode === 0 && mirrorSkip > 0 && ++frame % mirrorSkip === 0) {
       car.cabin.visible = false;
       const mirror = car.mirrors[mirrorIndex++ % car.mirrors.length];
       rearView.position.copy(rig.localToWorld(eye.copy(mirror.position).add(mirrorOffset.set(0,tall,.2))));
