@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<script>if (new URLSearchParams(location.search).get('phone')==='1') document.documentElement.classList.add('phone-preview');</script>
+<meta name="theme-color" content="#101415">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect x='2' y='2' width='60' height='60' rx='14' fill='%23131a21' stroke='%23ffc176' stroke-width='4'/%3E%3Cpath d='M16 54 L27 22 L37 22 L48 54 Z' fill='%23ffc176'/%3E%3Ccircle cx='32' cy='15' r='5' fill='%23ffc176'/%3E%3C/svg%3E">
+<title>Afterlane · Night driving</title>
+<link rel="stylesheet" href="/style.css">
+<link rel="stylesheet" href="/game.css">
+<link rel="stylesheet" href="/touch.css">
+<script type="importmap">{"imports":{"three":"/three/build/three.module.js","three/addons/":"/three/examples/jsm/"}}</script>
+</head>
+<body>
+<section id="loading-screen" aria-label="Loading Afterlane">
+  <div class="loading-card">
+    <div class="loading-logo" aria-hidden="true">
+      <svg viewBox="0 0 88 88" width="76" height="76" fill="none">
+        <defs>
+          <linearGradient id="al-amber" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stop-color="#ffd599"/>
+            <stop offset="100%" stop-color="#ff9f43"/>
+          </linearGradient>
+          <linearGradient id="al-road" x1="0.5" y1="0" x2="0.5" y2="1">
+            <stop offset="0%" stop-color="#ffc176" stop-opacity="0.15"/>
+            <stop offset="100%" stop-color="#ffc176" stop-opacity="0.9"/>
+          </linearGradient>
+        </defs>
+        <rect x="4" y="4" width="80" height="80" rx="20" fill="#131a21" stroke="url(#al-amber)" stroke-width="2.5"/>
+        <path d="M22 72 L37 30 L51 30 L66 72 Z" fill="url(#al-road)"/>
+        <path d="M44 33 L44 43 M44 49 L44 61 M44 66 L44 72" stroke="#10151b" stroke-width="3" stroke-linecap="round"/>
+        <circle cx="44" cy="24" r="7.5" fill="url(#al-amber)"/>
+        <path d="M16 42 Q44 33 72 42" stroke="#ffc176" stroke-width="1.8" stroke-opacity="0.45" fill="none"/>
+      </svg>
+    </div>
+    <div class="loading-wordmark">AFTER<span>LANE</span></div>
+    <p class="loading-subtitle">ROUTE 07 · NIGHT DRIVING</p>
+    <div class="loading-progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+      <div id="loading-bar-fill"></div>
+    </div>
+    <p id="loading-status" aria-live="polite">Initializing driving engine…</p>
+  </div>
+</section>
+<main>
+<div id="viewport" aria-label="Three-dimensional highway driving view"></div>
+<header class="game-menu">
+  <details id="top-menu">
+    <summary aria-label="Game menu" title="Game menu"><i></i><i></i><i></i></summary>
+    <nav aria-label="Game options">
+      <button id="multiplayer" type="button">Multiplayer</button>
+      <button id="settings" type="button">Settings</button>
+      <button id="garage" type="button">Garage</button>
+      <button id="view" type="button">Cabin view</button>
+      <div id="chase-tools" hidden><button type="button">Recenter camera</button></div>
+    </nav>
+  </details>
+</header>
+<section id="intro">
+<div class="intro-brand" aria-hidden="true">
+  <svg viewBox="0 0 40 40" width="26" height="26" fill="none">
+    <rect x="2" y="2" width="36" height="36" rx="9" fill="#151d24" stroke="#ffc176" stroke-width="2"/>
+    <path d="M10 33 L17 14 L23 14 L30 33 Z" fill="#ffc176" fill-opacity="0.82"/>
+    <path d="M20 15 L20 20 M20 24 L20 31" stroke="#151d24" stroke-width="2.2" stroke-linecap="round"/>
+    <circle cx="20" cy="10" r="3" fill="#ffc176"/>
+  </svg>
+  <span>AFTERLANE</span>
+</div>
+<p class="route"><span></span> ROUTE 07 <b> / </b> NORTHBOUND</p>
+<h1>The night<br>is yours<span>.</span></h1>
+<p class="sub">Drive a winding highway in live traffic. Earn 1 point every 15 m and 10 for each close overtake.</p>
+<div class="intro-actions">
+  <button id="play-missions" type="button" disabled>Play with Mission</button>
+  <button id="start" type="button" disabled>Loading route…</button>
+  <button id="open-settings" type="button">Settings</button>
+</div>
+<div id="mission-result-actions" class="intro-actions" hidden>
+  <button id="mission-next" type="button">Next Mission</button>
+  <button id="mission-map-back" type="button">Mission Map</button>
+  <button id="mission-retry" type="button">Retry Mission</button>
+</div>
+<p id="touch-orientation">Rotate your phone for landscape driving.</p>
+</section>
+<p id="error" role="alert" hidden></p>
+<output id="road-speed" aria-label="Speed">0 km/h</output>
+<div id="drive-durability" hidden aria-label="Vehicle durability">
+  <span class="durability-label">Car</span>
+  <div class="durability-track"><div id="durability-fill"></div></div>
+  <span id="durability-pct">100%</span>
+</div>
+<section id="mission-hud" hidden aria-label="Active mission progress">
+  <div class="mission-hud-top">
+    <strong id="mission-hud-title">Mission 1</strong>
+    <span id="mission-hud-timer">00:35</span>
+  </div>
+  <div id="mission-hud-goals"></div>
+</section>
+<output id="drive-toast" hidden aria-live="polite"></output>
+<div id="hit-flash" aria-hidden="true"></div>
+<section id="flight-controls" hidden aria-label="T+RDSTR flight controls">
+  <output id="flight-status">On road</output>
+  <div class="flight-charge">
+    <progress id="flight-charge" aria-label="Flight charge" max="100" value="100"></progress>
+    <span id="flight-percent">100%</span>
+  </div>
+  <div>
+    <button type="button" id="flight-toggle">Take off <kbd>F</kbd></button>
+    <button type="button" data-drive="KeyT" disabled>Climb <kbd>T</kbd></button>
+    <button type="button" data-drive="KeyG" disabled>Descend <kbd>G</kbd></button>
+  </div>
+</section>
+<div id="touch-drive" hidden aria-label="Touch driving controls">
+  <div class="touch-steering">
+    <div id="touch-arrows" role="group" aria-label="Steering arrows" hidden>
+      <button type="button" data-drive="ArrowLeft" aria-label="Steer left">‹</button>
+      <button type="button" data-drive="ArrowRight" aria-label="Steer right">›</button>
+    </div>
+    <div id="touch-wheel" tabindex="0" role="slider" aria-label="Steering wheel" aria-valuemin="-100" aria-valuemax="100" aria-valuenow="0">
+      <div class="touch-wheel-rotor" aria-hidden="true">
+        <div class="touch-wheel-spokes"><i></i><i></i><i></i></div>
+        <div class="touch-wheel-rim"></div><div class="touch-wheel-hub"></div><div class="touch-wheel-marker"></div>
+      </div>
+    </div>
+  </div>
+  <div class="touch-actions" role="group" aria-label="Driving actions">
+    <div class="touch-utility">
+      <div id="touch-transmission" class="touch-transmission">
+        <button id="touch-gear" type="button" aria-label="Automatic transmission. Switch to manual."><span id="touch-gear-value">D1</span><small id="touch-gear-mode">Auto</small></button>
+        <div id="touch-gate" role="group" aria-label="H-pattern shifter">
+          <div id="touch-gate-slots"></div>
+          <div id="touch-shift-knob" aria-hidden="true"></div>
+        </div>
+        <p id="touch-shift-message" role="status"></p>
+      </div>
+      <div class="touch-extras">
+        <button id="touch-smoke" type="button" aria-pressed="false">Smoke</button>
+        <button type="button" data-drive="Space" aria-pressed="false">Handbrake</button>
+      </div>
+    </div>
+    <div class="touch-pedals">
+      <button type="button" data-drive="KeyS"><span class="pedal-icon" aria-hidden="true"></span>Brake</button>
+      <button type="button" data-drive="KeyW"><span class="pedal-icon" aria-hidden="true"></span>Gas</button>
+    </div>
+  </div>
+</div>
+<dialog id="panel"><div class="panel-heading"><h2 id="panel-title"></h2><button id="close-panel" aria-label="Close">Close</button></div><div id="panel-content"></div><aside id="room-score" hidden aria-live="polite"></aside></dialog>
+<dialog id="garage-panel" aria-labelledby="garage-title">
+  <div class="panel-heading"><h2 id="garage-title">Garage</h2><button id="garage-close" type="button">Close</button></div>
+  <div class="garage-layout">
+    <div class="garage-stage">
+      <div id="garage-viewport" role="img" tabindex="0"></div>
+      <div class="garage-view-actions"><button id="garage-rotate" type="button">Pause rotation</button><button id="garage-audio" type="button">Hear engine</button></div>
+    </div>
+    <div class="garage-sidebar">
+      <p id="garage-wallet" class="wallet"></p>
+      <nav id="garage-list" aria-label="Browse garage vehicles"></nav>
+      <h3 id="garage-car-name"></h3><p id="garage-car-stats"></p>
+      <p id="garage-model-status" role="status"></p>
+      <div class="room-actions"><button id="garage-equip" type="button">Equip</button></div>
+    </div>
+  </div>
+</dialog>
+<dialog id="mission-dialog" aria-labelledby="mission-map-heading">
+  <div class="panel-heading">
+    <h2 id="mission-map-heading">Route 07 · Missions</h2>
+    <button id="mission-close" type="button">Close</button>
+  </div>
+  <div id="mission-map-scroll"></div>
+  <div class="mission-brief">
+    <div class="mission-brief-head">
+      <h3 id="mission-brief-title">Mission 1</h3>
+      <span id="mission-brief-reward" class="wallet"></span>
+    </div>
+    <p id="mission-brief-desc"></p>
+    <div id="mission-brief-tags"></div>
+    <div class="mission-brief-actions">
+      <button id="mission-start-btn" type="button">Start Mission</button>
+    </div>
+  </div>
+</dialog>
+</main>
+<script src="/socket.io/socket.io.js"></script>
+<script type="module" src="/main.js"></script>
+</body>
+</html>

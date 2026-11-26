@@ -1,0 +1,6 @@
+.playwright-mcp/
+.openqodex/
+node_modules/
+.env
+.env.*
+*.log
