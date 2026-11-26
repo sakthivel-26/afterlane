@@ -17,6 +17,10 @@ const server = createServer(async (req, res) => {
   try {
     const url = new URL(req.url, 'http://localhost');
     const path = decodeURIComponent(url.pathname);
+    if (path === '/healthz') {
+      res.writeHead(200,{'Content-Type':'text/plain','Cache-Control':'no-store'}).end('ok');
+      return;
+    }
     if (path === '/model-versions.json') {
       res.writeHead(200,{'Content-Type':'application/json','Cache-Control':'no-store'}).end(modelVersions);
       return;
