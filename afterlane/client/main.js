@@ -4,7 +4,7 @@ import { buildCar, drawGauges, group, loadDriverHand, loadVehicleAsset } from '.
 import { buildRoad, buildSky, loadJunctionAsset, roadLimit, roadX, roadYaw } from './road.js';
 import { buildTraffic, vehicleBody } from './traffic.js';
 import { dimensions, vehicles } from './vehicle-specs.js';
-import { buildRain, buildOptions, hydrateMobileStorage } from './options.js';
+import { buildRain, buildOptions, hydrateMobileStorage, isAndroidApp, isMobileDevice } from './options.js';
 import { connectRooms } from './rooms.js';
 import { drivingAudio } from './audio.js';
 import { drivingEffects } from './effects.js';
@@ -57,7 +57,6 @@ function initialVehicleIndex() {
   return 11; // Classic Mini
 }
 
-const isAndroidApp = navigator.userAgent.includes('AfterlaneAndroid');
 let renderer;
 try {
   setLoading(12, 'Initializing graphics engine…');
@@ -888,7 +887,8 @@ function run(renderer, plants, driverHand, junctionAsset, initialIndex = 0, init
     const size = playerSizes[selected];
     if (quality !== settings.quality) {
       quality = settings.quality;
-      renderer.setPixelRatio(Math.min(devicePixelRatio || 1, { Low: 1.0, Medium: isAndroidApp ? 1.4 : 1.65, High: 2.35, Ultra: 3.0 }[quality] || 2.35));
+      const caps = isMobileDevice ? { Low: 1.0, Medium: 1.35, High: 1.75, Ultra: 2.0 } : { Low: 1.0, Medium: 1.65, High: 2.35, Ultra: 3.0 };
+      renderer.setPixelRatio(Math.min(devicePixelRatio || 1, caps[quality] || caps.High));
       resize();
     }
     const progress = rooms.active ? rooms.route : routeProgress;
@@ -1170,7 +1170,7 @@ function run(renderer, plants, driverHand, junctionAsset, initialIndex = 0, init
       camera.updateProjectionMatrix();
     }
     if (garagePanel.open || renderer.getContext().isContextLost()) return;
-    const mirrorSkip = { Low: isAndroidApp ? 0 : 4, Medium: isAndroidApp ? 4 : 2, High: 1, Ultra: 1 }[quality] || 1;
+    const mirrorSkip = (isMobileDevice ? { Low: 4, Medium: 3, High: 2, Ultra: 2 } : { Low: 4, Medium: 2, High: 1, Ultra: 1 })[quality] || 1;
     if (mode === 0 && mirrorSkip > 0 && ++frame % mirrorSkip === 0) {
       car.cabin.visible = false;
       const mirror = car.mirrors[mirrorIndex++ % car.mirrors.length];
@@ -1183,7 +1183,8 @@ function run(renderer, plants, driverHand, junctionAsset, initialIndex = 0, init
       renderer.setRenderTarget(null);
       car.cabin.visible = true;
     }
-    if (quality !== 'High' && quality !== 'Ultra') renderer.render(scene,camera);
+    const useEffects = isMobileDevice ? quality === 'Ultra' : (quality === 'High' || quality === 'Ultra');
+    if (!useEffects) renderer.render(scene,camera);
     else effects.render(now,Math.abs(speed),quality,daylight);
   };
   setLoading(90, 'Preparing driving view…');

@@ -8,8 +8,11 @@ const key = 'afterlane-profile-v2';
 const idbName = 'afterlane-mobile-storage';
 const idbStore = 'profile';
 const starterVehicleIndex = 11; // Classic Mini
-const isAndroidApp = navigator.userAgent.includes('AfterlaneAndroid');
-const defaultQuality = isAndroidApp ? 'Medium' : 'High';
+export const isAndroidApp = navigator.userAgent.includes('AfterlaneAndroid');
+export const isMobileDevice = isAndroidApp
+  || /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent)
+  || (typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches);
+const defaultQuality = isMobileDevice ? 'Medium' : 'High';
 const defaults = { balance:0, owned:[starterVehicleIndex], selected:starterVehicleIndex, traffic:14, weather:'Clear Day', wipers:'Auto', cabinLight:'On', cigarette:'Off', transmission:'Automatic', steering:'Touch', controllerStyle:'Wheel', steeringSensitivity:115, controlsOpacity:100, controllerLayout:defaultControllerLayout(), driveSide:'Right-hand drive', quality:defaultQuality, audio:'On', missionUnlocked:1, missionCompleted:{} };
 
 if (typeof navigator !== 'undefined' && navigator.storage?.persist) {

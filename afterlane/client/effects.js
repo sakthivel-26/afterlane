@@ -4,10 +4,10 @@ import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { HalfFloatType, Vector2, WebGLRenderTarget } from 'three';
+import { isMobileDevice } from './options.js';
 
 export function drivingEffects(renderer,scene,camera) {
-  const isAndroidApp = navigator.userAgent.includes('AfterlaneAndroid');
-  const samples = Math.min(isAndroidApp ? 2 : 4, renderer.capabilities.maxSamples || 0);
+  const samples = isMobileDevice ? 0 : Math.min(4, renderer.capabilities.maxSamples || 0);
   const composer = new EffectComposer(renderer, new WebGLRenderTarget(1, 1, { type: HalfFloatType, samples }));
   const sanitize = new ShaderPass({
     uniforms:{tDiffuse:{value:null}},
@@ -49,7 +49,7 @@ export function drivingEffects(renderer,scene,camera) {
   composer.addPass(new OutputPass());
   return {
     resize(width,height) {
-      composer.setPixelRatio(renderer.getPixelRatio());
+      composer.setPixelRatio(isMobileDevice ? Math.min(renderer.getPixelRatio(), 1.15) : renderer.getPixelRatio());
       composer.setSize(width,height);
     },
     render(now,speed,quality,daylight=0) {
