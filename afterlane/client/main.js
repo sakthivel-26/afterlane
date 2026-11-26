@@ -60,7 +60,8 @@ function initialVehicleIndex() {
 let renderer;
 try {
   setLoading(12, 'Initializing graphics engine…');
-  renderer = new T.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+  const isAndroidApp = navigator.userAgent.includes('AfterlaneAndroid');
+  renderer = new T.WebGLRenderer({ antialias: !isAndroidApp, powerPreference: 'high-performance' });
   const initialIndex = initialVehicleIndex();
   let loadedSteps = 0;
   const stepLoad = (label, promise) => promise.then(result => {
@@ -112,7 +113,7 @@ function run(renderer, plants, driverHand, junctionAsset, initialIndex = 0, init
   const nightSky = new T.Color(0x283a5c), sunSky = new T.Color(0xdcf0ff);
   const nightGround = new T.Color(0x161418), sunGround = new T.Color(0xc6a982);
   const nightKeyColor = new T.Color(0x6379a3), sunColor = new T.Color(0xfff1cc);
-  scene.fog = new T.FogExp2(dayFog, .004);
+  scene.fog = new T.FogExp2(dayFog, isAndroidApp ? .006 : .004);
   const ambient = new T.HemisphereLight(0xc6d7fc, 0x79624b, .9);
   scene.add(ambient);
   const moon = new T.DirectionalLight(0xadc3ec, .55);
@@ -135,7 +136,7 @@ function run(renderer, plants, driverHand, junctionAsset, initialIndex = 0, init
   car.exterior.add(playerLightbar);
   const suspension = buildSuspension();
   const audio = drivingAudio();
-  const camera = new T.PerspectiveCamera(68, 1, .035, 500);
+  const camera = new T.PerspectiveCamera(68, 1, .035, isAndroidApp ? 350 : 500);
   const compiledTemplates = new WeakSet();
   const prepareTrafficShader = async template => {
     if (compiledTemplates.has(template)) return;
@@ -826,7 +827,7 @@ function run(renderer, plants, driverHand, junctionAsset, initialIndex = 0, init
     const size = playerSizes[selected];
     if (quality !== settings.quality) {
       quality = settings.quality;
-      renderer.setPixelRatio(Math.min(devicePixelRatio || 1, { Low: 1.0, Medium: 1.65, High: 2.35, Ultra: 3.0 }[quality] || 2.35));
+      renderer.setPixelRatio(Math.min(devicePixelRatio || 1, { Low: 1.0, Medium: isAndroidApp ? 1.4 : 1.65, High: 2.35, Ultra: 3.0 }[quality] || 2.35));
       resize();
     }
     const progress = rooms.active ? rooms.route : routeProgress;

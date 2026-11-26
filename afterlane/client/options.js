@@ -6,7 +6,9 @@ import { applyControllerLayout, createLayoutEditor, defaultControllerLayout, nor
 
 const key = 'afterlane-profile-v2';
 const starterVehicleIndex = 11; // Classic Mini
-const defaults = { balance:0, owned:[starterVehicleIndex], selected:starterVehicleIndex, traffic:14, weather:'Clear Day', wipers:'Auto', cabinLight:'On', cigarette:'Off', transmission:'Automatic', steering:'Touch', controllerStyle:'Wheel', steeringSensitivity:115, controlsOpacity:100, controllerLayout:defaultControllerLayout(), driveSide:'Right-hand drive', quality:'High', audio:'On', missionUnlocked:1, missionCompleted:{} };
+const isAndroidApp = navigator.userAgent.includes('AfterlaneAndroid');
+const defaultQuality = isAndroidApp ? 'Medium' : 'High';
+const defaults = { balance:0, owned:[starterVehicleIndex], selected:starterVehicleIndex, traffic:14, weather:'Clear Day', wipers:'Auto', cabinLight:'On', cigarette:'Off', transmission:'Automatic', steering:'Touch', controllerStyle:'Wheel', steeringSensitivity:115, controlsOpacity:100, controllerLayout:defaultControllerLayout(), driveSide:'Right-hand drive', quality:defaultQuality, audio:'On', missionUnlocked:1, missionCompleted:{} };
 
 function storedProfile() {
   try {

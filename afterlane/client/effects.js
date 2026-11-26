@@ -6,7 +6,8 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { HalfFloatType, Vector2, WebGLRenderTarget } from 'three';
 
 export function drivingEffects(renderer,scene,camera) {
-  const samples = Math.min(4, renderer.capabilities.maxSamples || 0);
+  const isAndroidApp = navigator.userAgent.includes('AfterlaneAndroid');
+  const samples = Math.min(isAndroidApp ? 2 : 4, renderer.capabilities.maxSamples || 0);
   const composer = new EffectComposer(renderer, new WebGLRenderTarget(1, 1, { type: HalfFloatType, samples }));
   const sanitize = new ShaderPass({
     uniforms:{tDiffuse:{value:null}},

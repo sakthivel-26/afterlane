@@ -57,6 +57,10 @@ class MainActivity : ComponentActivity() {
 
     webView = WebView(this).apply {
       setBackgroundColor(Color.parseColor("#10151B"))
+      setLayerType(View.LAYER_TYPE_HARDWARE, null)
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+        setRendererPriorityPolicy(WebView.RENDERER_PRIORITY_IMPORTANT, false)
+      }
       settings.apply {
         javaScriptEnabled = true
         domStorageEnabled = true
